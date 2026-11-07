@@ -1,0 +1,17 @@
+{
+  "backend": "pytorch",
+  "model": "../models/attention_gcn_w48_s0/attention_gcn.torchscript",
+  "model_manifest": "../models/attention_gcn_w48_s0/model_manifest.json",
+  "device": "cpu",
+  "input_shape": [1, 48, 17, 3],
+  "precision": "fp32",
+  "warmup": 50,
+  "iterations": 200,
+  "seed": 0,
+  "deterministic": true,
+  "cpu_threads": 1,
+  "output_root": "../runs/attention-cpu-reference",
+  "platform_label": "desktop-cpu-reference-not-jetson",
+  "telemetry_interval_s": 1.0,
+  "availability": {}
+}

@@ -1,0 +1,1 @@
+2026-11-07,implemented_not_executed,"headless;pose=1x56x8400;classifier=1x48x17x3;sampling=15fps;tracking=greedy_iou;accuracy=unvalidated",orion_bench/live_demo.py

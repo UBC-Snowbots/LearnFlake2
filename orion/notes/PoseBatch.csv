@@ -1,0 +1,2 @@
+date,owner,verdict,numbers,where
+2026-11-07,PoseBatch,implemented-not-run,"6 default runs; 3 distinct seeds; 2 precisions; 50 warmup; 200 steady; 0 verification runs; 0 queue operations","scripts/run_pose_candidate.py; examples/yolo11n_pose_gpu.json; notes/PoseBatch.md"

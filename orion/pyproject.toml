@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orion-rover-benchmark"
+version = "0.1.0"
+description = "Orion: reproducible vision-model benchmarking for UBC Rover"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+pytorch = ["torch"]
+onnxruntime = ["numpy", "onnxruntime"]
+pose = ["ultralytics==8.4.174"]
+live = ["torch", "numpy", "opencv-python"]
+train = ["torch", "numpy"]
+
+[tool.setuptools.packages.find]
+include = ["orion_bench*"]

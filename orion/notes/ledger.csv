@@ -1,0 +1,14 @@
+date,owner,verdict,cpu_lifecycle_cases,cuda_lifecycle_cases,onnx_cpu_cases,invalid_config_cases,scored_experiments,where
+2026-11-06,BackendHardening,implemented; checks deferred to integrator,0,0,0,0,0,notes/BackendHardening.md
+2026-11-06,TelemetryHardening,implemented; checks deferred to integrator,0,0,0,0,0,notes/TelemetryHardening.md
+2026-11-06,SmokeDocs,implemented; checks deferred to integrator,0,0,0,0,0,notes/SmokeDocs.md
+2026-11-06,Parent,pass functional acceptance,8,4,1,5,0,notes/INTEGRATION.md
+2026-11-06,ParentOrionRename,pass Orion rename; workspace rename deferred,4,0,0,0,0,notes/ORION_RENAME.md
+2026-11-06,ParentWorkspaceRename,pass workspace rename with compatibility link,4,0,0,0,0,notes/WORKSPACE_RENAME.md
+2026-11-07,PosePreparation,implemented; checks delegated to integrator,0,0,0,0,0,notes/PosePreparation.md
+2026-11-07,PoseBatch,implemented; checks delegated to integrator,0,0,0,0,0,notes/PoseBatch.md
+2026-11-07,ParentPoseIntegration,pass candidate collection; Jetson suitability unscored,5,6,0,0,0,notes/POSE_CANDIDATE.md
+2026-11-07,ParentAttentionClassifier,trained on public proxies; not deployable,0,6,0,0,6,notes/ATTENTION_RESULTS.md
+2026-11-07,CameraPipeline,implemented; checks delegated to integrator,0,0,0,0,0,notes/CameraPipeline.md
+2026-11-07,KitPackaging,implemented; checks delegated to integrator,0,0,0,0,0,notes/KitPackaging.md
+2026-11-07,ParentPortableIntegration,pass CPU video transfer smoke; Jetson unverified,1,0,0,0,0,notes/PORTABLE_INTEGRATION.md

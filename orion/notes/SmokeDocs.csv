@@ -1,0 +1,2 @@
+date,owner,verdict,numbers,where
+2026-11-06,SmokeDocs,implemented-not-run,"3 CLI lifecycle scenarios; 2 aggregation formats; 0 checks run; 0 commits","scripts/smoke_test.py; README.md; examples/smoke_cpu.json; examples/smoke_gpu.json; pyproject.toml"
