@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parent.parent
 KIT_ROOT = "orion-live-kit"
 REQUIRED = {
     "README.md": "docs/PORTABLE.md",
+    "GESTURE_WORKFLOW.md": "docs/GESTURE_WORKFLOW.md",
     "orion_bench/__init__.py": "orion_bench/__init__.py",
     "orion_bench/live_demo.py": "orion_bench/live_demo.py",
     "models/yolo11n_pose_640/model_manifest.json": "models/yolo11n_pose_640/model_manifest.json",

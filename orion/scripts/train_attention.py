@@ -73,7 +73,7 @@ def sample_batch(split, indices, generator):
 
 @torch.inference_mode()
 def score_clips(model, split, device, stride, batch_size=512):
-    """Per-clip attention probability = max over causal sliding windows."""
+    """Per-clip positive-class (index 1) probability = max over causal sliding windows."""
     model.eval()
     jobs = []
     for i in range(len(split)):
@@ -97,7 +97,7 @@ def average_precision(score, positive):
 
 
 def metrics(score, labels, threshold, classes):
-    positive = labels == classes.index("attention")
+    positive = labels == 1  # class index 1 is the target gesture in every dataset
     fire = score >= threshold
     result = {
         "average_precision": average_precision(score, positive),
@@ -108,15 +108,15 @@ def metrics(score, labels, threshold, classes):
         "clips": int(len(labels)),
     }
     for name in classes:
-        if name != "attention":
+        if name != classes[1]:
             mask = labels == classes.index(name)
             result[f"false_positive_rate_{name}"] = float(fire[mask].mean()) if mask.any() else None
     return result
 
 
 def threshold_for(score, labels, classes, max_fpr):
-    """Lowest threshold whose non-attention false-positive rate stays ≤ max_fpr."""
-    negative = score[labels != classes.index("attention")]
+    """Lowest threshold whose negative-class false-positive rate stays ≤ max_fpr."""
+    negative = score[labels != 1]
     return float(np.quantile(negative, 1 - max_fpr)) if len(negative) else 0.5
 
 
@@ -137,7 +137,7 @@ def main():
     parser.add_argument("--score-test", action="store_true",
                         help="score held-out test once; only for frozen final configurations")
     parser.add_argument("--sample-ratio", default="1,1,1",
-                        help="relative per-class sampling share (other,attention,confuser)")
+                        help="relative per-class sampling share, in dataset class order")
     args = parser.parse_args()
 
     report = json.loads((args.data / "dataset_report.json").read_text())

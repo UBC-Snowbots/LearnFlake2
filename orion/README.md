@@ -3,13 +3,15 @@
 Private repository: [Luxaris/Orion](https://github.com/Luxaris/Orion). Install the Python package from a GitHub release (needs repo access):
 
 ```sh
-gh release download v0.1.0 -R Luxaris/Orion -p '*.whl' -p 'orion-live-kit.tar.gz' -p 'SHA256SUMS'
-sha256sum -c SHA256SUMS
-pip install ./orion_rover_benchmark-0.1.0-py3-none-any.whl          # extras: [live], [train], [pose]
-# or from source: pip install "git+ssh://git@github.com/Luxaris/Orion.git@v0.1.0"
+gh release download v0.2.0 -R Luxaris/Orion -p '*.whl' -p 'orion-live-kit.tar.gz' -p 'SHA256SUMS'
+sha256sum -c SHA256SUMS --ignore-missing
+pip install ./orion_rover_benchmark-0.2.0-py3-none-any.whl          # extras: [live], [train], [pose]
+# or from source: pip install "git+ssh://git@github.com/Luxaris/Orion.git@v0.2.0"
 ```
 
 `orion-live-kit.tar.gz` is the portable camera/video kit with model weights (see `docs/PORTABLE.md`). Weights are not committed to Git.
+
+**Follow! gesture (URC 2027):** record the team's chosen arm/leg/torso gesture and retrain — see [docs/GESTURE_WORKFLOW.md](docs/GESTURE_WORKFLOW.md).
 
 Unattended **synthetic inference** benchmarking with durable per-run artifacts. This is not a camera pipeline, dataset evaluation, gesture/detection accuracy measurement, or Jetson emulator. Compare only matching model, shape, precision, backend boundaries, and recorded hardware/software conditions. No performance claim follows from the built-in smoke model.
 

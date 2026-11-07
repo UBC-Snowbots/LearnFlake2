@@ -34,12 +34,13 @@ def artifact(path, filename):
     return path
 
 
-def classifier_threshold(model_path, manifest_path):
+def classifier_contract(model_path, manifest_path):
+    """(threshold, positive label, window length) from the classifier manifest."""
     path = Path(manifest_path) if manifest_path else model_path.parent / "model_manifest.json"
     if not path.exists():
         if manifest_path:
             raise ValueError(f"Classifier manifest not found: {path}")
-        return None
+        return None, "target", WINDOW
     manifest = json.loads(path.read_text())
     expected = manifest.get("export", {}).get("sha256")
     if expected:
@@ -51,15 +52,18 @@ def classifier_threshold(model_path, manifest_path):
             raise ValueError("Classifier artifact does not match its manifest SHA-256")
     source = manifest.get("source", {})
     classes = source.get("classes")
-    if classes is not None and (len(classes) <= 1 or classes[1] != "attention"):
-        raise ValueError("Classifier manifest must have attention at class index 1")
+    if classes is None or len(classes) < 2:
+        raise ValueError("Classifier manifest must list classes with the target at index 1")
     value = source.get("validation_threshold")
     if value is None:
         raise ValueError(f"Classifier manifest has no source.validation_threshold: {path}")
     value = float(value)
     if not math.isfinite(value) or not 0 <= value <= 1:
         raise ValueError("Classifier threshold must be finite and between 0 and 1")
-    return value
+    shape = manifest.get("export", {}).get("input_shape", [1, WINDOW, 17, 3])
+    if len(shape) != 4 or shape[2:] != [17, 3]:
+        raise ValueError("Classifier input_shape must be [1, T, 17, 3]")
+    return value, classes[1], int(shape[1])
 
 
 def iou(box, boxes):
@@ -114,7 +118,7 @@ def pose_detections(model, frame, device):
     return detections
 
 
-def associate(tracks, detections, timestamp, next_id):
+def associate(tracks, detections, timestamp, next_id, window=WINDOW):
     # Remove stale identities before matching; never bridge a long occlusion.
     tracks = {key: value for key, value in tracks.items() if timestamp - value["last"] <= TRACK_GAP}
     pairs = []
@@ -131,7 +135,7 @@ def associate(tracks, detections, timestamp, next_id):
     for detection in detections:
         if "id" not in detection:
             detection["id"] = next_id
-            tracks[next_id] = {"samples": deque(maxlen=WINDOW), "next_sample": timestamp,
+            tracks[next_id] = {"samples": deque(maxlen=window), "next_sample": timestamp,
                                "last": timestamp, "box": detection["box"]}
             next_id += 1
         track = tracks[detection["id"]]
@@ -153,7 +157,9 @@ def associate(tracks, detections, timestamp, next_id):
 def run(args):
     pose_path = artifact(args.pose, "yolo11n-pose.torchscript")
     classifier_path = artifact(args.classifier, "attention_gcn.torchscript")
-    threshold = classifier_threshold(classifier_path, args.classifier_manifest)
+    threshold, target, window = classifier_contract(classifier_path, args.classifier_manifest)
+    if not 1 <= args.trigger_k <= args.trigger_m:
+        raise ValueError("--trigger-k must be between 1 and --trigger-m")
     if args.device == "cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA was requested but is not available")
     if args.max_frames is not None and args.max_frames <= 0:
@@ -167,8 +173,10 @@ def run(args):
         raise ValueError(f"Output directory is not empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
     summary = {"status": "starting", "source": args.source, "device": args.device,
-               "threshold": threshold, "frames": 0, "processed_fps": None,
-               "note": "Diagnostic classifier scores only; gestures are not validated."}
+               "threshold": threshold, "target": target, "window": window,
+               "trigger_rule": f"{args.trigger_k} of last {args.trigger_m} scored frames above threshold",
+               "frames": 0, "processed_fps": None, "triggers": [],
+               "note": "Diagnostic only; not validated for rover control."}
     capture = writer = None
     start = time.perf_counter()
     try:
@@ -208,13 +216,14 @@ def run(args):
                 pose_start = time.perf_counter()
                 detections = pose_detections(pose, frame, args.device)
                 pose_ms = (time.perf_counter() - pose_start) * 1000
-                tracks, next_id = associate(tracks, detections, timestamp, next_id)
+                tracks, next_id = associate(tracks, detections, timestamp, next_id, window)
                 classifier_start = time.perf_counter()
                 people = []
                 for detection in detections:
                     track = tracks[detection["id"]]
                     score = None
-                    if len(track["samples"]) == WINDOW:
+                    triggered = False
+                    if len(track["samples"]) == window:
                         inputs = torch.from_numpy(np.stack(track["samples"])).unsqueeze(0).to(args.device)
                         logits = classifier(inputs)
                         if not isinstance(logits, torch.Tensor) or tuple(logits.shape) != (1, 3):
@@ -222,17 +231,27 @@ def run(args):
                         score = float(torch.softmax(logits, dim=1)[0, 1].item())
                         if not math.isfinite(score):
                             raise ValueError("Classifier produced nonfinite scores")
+                        if threshold is not None:
+                            fires = track.setdefault("fires", deque(maxlen=args.trigger_m))
+                            fires.append(score >= threshold)
+                            triggered = sum(fires) >= args.trigger_k
+                            if triggered and not track.get("triggered"):
+                                summary["triggers"].append({"frame": summary["frames"], "timestamp_seconds": timestamp,
+                                                            "track_id": detection["id"]})
+                            track["triggered"] = triggered
                     box = detection["box"]
-                    status = "warming up" if score is None else f"attention score {score:.3f}"
-                    cv2.rectangle(frame, tuple(box[:2].astype(int)), tuple(box[2:].astype(int)), (0, 255, 0), 2)
-                    cv2.putText(frame, f"ID {detection['id']} {status}", (int(box[0]), max(15, int(box[1]) - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+                    status = "warming up" if score is None else f"{target} {score:.2f}" + (" TRIGGER" if triggered else "")
+                    colour = (0, 0, 255) if triggered else (0, 255, 0)
+                    cv2.rectangle(frame, tuple(box[:2].astype(int)), tuple(box[2:].astype(int)), colour, 2)
+                    cv2.putText(frame, f"ID {detection['id']} {status}", (int(box[0]), max(15, int(box[1]) - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 1, cv2.LINE_AA)
                     for x, y, confidence in detection["points"]:
                         if confidence >= 0.25:
                             cv2.circle(frame, (int(x * width), int(y * height)), 2, (0, 255, 255), -1)
                     people.append({"track_id": detection["id"], "box_xyxy": box.tolist(),
                                    "pose_confidence": detection["confidence"], "keypoints_xy_normalized_confidence": detection["points"].tolist(),
-                                   "window_samples": len(track["samples"]), "attention_score": score,
-                                   "threshold_exceeded": None if score is None or threshold is None else score >= threshold})
+                                   "window_samples": len(track["samples"]), "target_score": score,
+                                   "threshold_exceeded": None if score is None or threshold is None else score >= threshold,
+                                   "triggered": triggered})
                 classifier_ms = (time.perf_counter() - classifier_start) * 1000
                 writer.write(frame)
                 total_ms = (time.perf_counter() - frame_start) * 1000
@@ -272,6 +291,8 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-frames", type=int)
+    parser.add_argument("--trigger-k", type=int, default=6, help="frames above threshold needed to trigger")
+    parser.add_argument("--trigger-m", type=int, default=8, help="recent scored frames considered")
     args = parser.parse_args()
     try:
         run(args)
