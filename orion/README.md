@@ -1,205 +1,179 @@
 # Orion
 
-Private repository: [Luxaris/Orion](https://github.com/Luxaris/Orion). Install the Python package from a GitHub release (needs repo access):
+Vision work for the **UBC Rover** URC 2027 Autonomy mission: recognise the astronaut's **Follow!** gesture from a camera, on an NVIDIA Jetson Orin NX, using a pose model plus a temporal skeleton classifier. Orion also contains the benchmark harness used to measure those models.
 
-```sh
-gh release download v0.3.0 -R Luxaris/Orion -p '*.whl' -p 'orion-live-kit.tar.gz' -p 'SHA256SUMS'
-sha256sum -c SHA256SUMS --ignore-missing
-pip install ./orion_rover_benchmark-0.3.0-py3-none-any.whl          # extras: [live], [train], [pose]
-# or from source: pip install "git+ssh://git@github.com/Luxaris/Orion.git@v0.3.0"
+Private repo: [Luxaris/Orion](https://github.com/Luxaris/Orion). Owner: Pranav. Local checkout: `~/projects/ubc-rover/Orion` (beside `RoverFlake2` and `LearnFlake`; `~/projects/ubc-rover-arm` is a compatibility symlink to the parent).
+
+> **Read this file first, then the doc for the task you are doing.** Keep it current: when you change behaviour, artifacts, results or next steps, update the matching section here in the same change.
+
+## Status (2026-11-07)
+
+| Piece | State | Evidence |
+|---|---|---|
+| Pose model **YOLO11n-pose**, TorchScript 640×640 | Exported and hash-pinned. RTX 5080: FP32 ~2.9 ms per forward; FP16 slower (~4.0 ms). | `notes/POSE_CANDIDATE.md` |
+| Hand-wave proxy classifier (`attention_gcn_w48_s0`) | Trained on public skeletons. Test AP 0.65 (NTU 0.70, HMDB in-the-wild 0.16). Not our gesture. | `notes/ATTENTION_RESULTS.md` |
+| **Pretrained base** `orion-actions171-base` | 171 actions, val top-1 76.3%, test 66.8%. Fine-tuning it gave val AP 0.71 on the proxy vs 0.55–0.58 from scratch. | `notes/PRETRAIN_RESULTS.md` |
+| Recording → dataset → train → export → live tools | Built. Smoke-tested end to end on public lab clips (pipeline only). | `docs/GESTURE_WORKFLOW.md` |
+| Portable camera/video kit | CPU video run verified after transfer. Live camera, CUDA kit path and **Jetson are unverified**. | `notes/PORTABLE_INTEGRATION.md` |
+| Team gesture model | **Not started: no team recordings yet.** | — |
+
+**Nothing here may drive the rover.** No model is validated for our gesture, on YOLO keypoints from our camera, on Jetson, or against continuous-video false-trigger rates.
+
+## The goal and the rules that shape it
+
+URC 2027 Autonomy, astronaut-assistance sub-mission ([Q&A](https://urc.marssociety.org/home/requirements-guidelines/qa)):
+
+- **Q11:** the team picks the gesture; **arm, leg and torso motion only**, no finger or facial gestures. So COCO-17 body keypoints are sufficient.
+- **Q10:** the astronaut may stand anywhere and walk up to the camera. **Q12:** any suit colours or patterns. **Q24:** any camera, including one on the astronaut.
+- **Q6:** a gesture earns full Follow! points; voice earns 2/3 and is the fallback. Other commands (Stay!, Fetch!, Come!, Give!) may use any method. **Q15:** be quiet during a gestured Follow!.
+- A false Follow! makes the rover drive, so **false triggers matter more than misses**.
+
+Proposed gesture (not yet agreed by the team): *two-arm overhead beckon* — both arms straight up, swept down to the chest, three times. Avoid single-arm waving: it is the classifier's most common false alarm.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+  C[Camera frame] --> P[YOLO11n-pose<br/>640 letterbox, NMS]
+  P --> T[IoU tracker<br/>per person]
+  T --> W[15 Hz ring buffer<br/>48 frames = 3.2 s]
+  W --> G[Causal ST-GCN<br/>other / target / confuser]
+  G --> D[Trigger: k of last m<br/>scores above threshold]
 ```
 
-`orion-live-kit.tar.gz` is the portable camera/video kit with model weights (see `docs/PORTABLE.md`). Weights are not committed to Git.
+- **Keypoints:** COCO-17, image-normalised x, y in [0,1] plus confidence: `[T,17,3]`.
+- **Classifier:** `orion_bench/attention_model.py` (`AttentionGCN`), about 1.1M parameters, width 48. Features are body-centred position, confidence, velocity and bone vectors; temporal convolutions are past-only. **Class index 1 is always the target** (`attention` in the proxy, `gesture` in team data).
+- **Live demo:** `orion_bench/live_demo.py` reads threshold, target name and window from the classifier's `model_manifest.json` and verifies the artifact SHA-256. The trigger defaults to 6 of the last 8 scored frames.
 
-**Follow! gesture (URC 2027):** record the team's chosen arm/leg/torso gesture and retrain — see [docs/GESTURE_WORKFLOW.md](docs/GESTURE_WORKFLOW.md). Start from the pretrained 171-action base model (`orion-actions171-base.tar.gz` release asset) — see [docs/FINETUNE.md](docs/FINETUNE.md).
+## Repository map
 
-Unattended **synthetic inference** benchmarking with durable per-run artifacts. This is not a camera pipeline, dataset evaluation, gesture/detection accuracy measurement, or Jetson emulator. Compare only matching model, shape, precision, backend boundaries, and recorded hardware/software conditions. No performance claim follows from the built-in smoke model.
-
-## Install and run
-
-Python 3.11+ is required. From the repository root:
-
-```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[pytorch]'
-python -m orion_bench run --config examples/smoke_cpu.json
-```
-
-The base package has no runtime dependencies. `.[pytorch]` adds PyTorch; `.[onnxruntime]` adds NumPy and CPU ONNX Runtime. Install the appropriate vendor CUDA PyTorch wheel, ONNX Runtime GPU package, or TensorRT distribution yourself for the target platform; packaging does not force GPU dependencies. Optional `onnx` enables ONNX initializer-count metadata, not inference. Do not replace a working CUDA environment's packages just to run CPU examples.
-
-```sh
-# In an existing compatible CUDA PyTorch environment:
-python -m orion_bench run --config examples/smoke_gpu.json
-```
-
-## Configuration
-
-Configuration is a flat JSON object. Unknown keys are rejected. Model/output paths resolve relative to the configuration file, not the launch directory; absolute paths are safest for queued jobs. Example outputs are under `examples/benchmark_results`.
-
-| Key | Default / meaning |
+| Path | What |
 |---|---|
-| `backend` | `pytorch`; also `onnxruntime`, `tensorrt` |
-| `model` | `smoke` (PyTorch only), otherwise a model file path |
-| `model_manifest` | `null`; optional JSON provenance path, resolved relative to config; export SHA-256 and input shape must match |
-| `device`, `gpu_index` | `cpu`, `0`; `cuda` uses a logical index under `CUDA_VISIBLE_DEVICES` |
-| `input_shape` | `[1,3,224,224]`; positive dimensions including batch first |
-| `precision` | `fp32`; also `fp16`; CPU fp16 is unsupported |
-| `warmup`, `iterations` | `10`, `100`; invocation counts, warmup may be zero |
-| `seed` | `0`; nonnegative integer, synthetic input is generated once and reused |
-| `deterministic` | `true`; boolean, requests runtime deterministic behavior |
-| `cpu_threads` | `1`; positive integer, PyTorch intra-op / ONNX Runtime intra-op threads |
-| `output_root` | `runs`; output parent directory |
-| `platform_label` | `desktop`; descriptive label, not hardware detection |
-| `telemetry_interval_s` | `1.0`; positive finite seconds |
-| `availability` | `{}`; optional GPU availability thresholds below |
+| `orion_bench/runner.py`, `backends.py`, `telemetry.py`, `aggregate.py`, `__main__.py` | Benchmark harness (`python -m orion_bench run --config ...`). Reference: `docs/BENCHMARK.md`. |
+| `orion_bench/prepare_pose.py` | Hash-verified YOLO11n-pose → TorchScript export, checked numerically against eager output. |
+| `orion_bench/temporal_data.py` | Downloads and verifies public PYSKL skeleton pickles and builds ragged-NPZ datasets from a JSON spec. |
+| `orion_bench/attention_model.py` | The ST-GCN model and its feature function. |
+| `orion_bench/record_gestures.py` | `record` (camera + timed prompts, auto-labelled) and `extract` (existing video + `labels.csv`) team sessions. |
+| `orion_bench/team_dataset.py` | Team sessions → dataset, split by **person**. Optionally adds public clips as negatives (public wave → confuser). |
+| `orion_bench/live_demo.py` | Headless camera/video pipeline: overlay video, `frames.jsonl`, `summary.json` with triggers and timing. |
+| `scripts/train_attention.py` | Training. `--objective detect` (class 1 vs rest, AP, threshold at ≤2% val FPR) or `classify` (top-1). `--init` and `--freeze-steps` for fine-tuning; `--score-test` scores test once. |
+| `scripts/eval_attention.py`, `export_attention.py` | Score a frozen run's test split once; export TorchScript plus manifest. |
+| `scripts/package_live_kit.py` | Builds `orion-live-kit.tar.gz` with `SHA256SUMS`. |
+| `scripts/run_pose_candidate.py`, `smoke_test.py`, `submit_tsp.sh` | Pose benchmark group runner, harness smoke, TSP submission. |
+| `examples/` | Harness configs, `yolo11n_pose_pin.json`, `attention_datasets.json` (proxy labels), `pretrain_actions.json` (171 classes). |
+| `docs/` | `GESTURE_WORKFLOW.md`, `FINETUNE.md`, `PORTABLE.md` (kit README), `BENCHMARK.md`. |
+| `notes/` | Dated protocols, results and handoffs, plus `ledger.csv` (one row per owner or change). |
+| `data/`, `models/`, `runs/`, `dist/` | **Git-ignored.** Datasets, weights, run outputs, build products (see below). |
 
-PyTorch deterministic mode enables deterministic algorithms (unsupported nondeterministic operations fail), controls cuDNN behavior, and disables TF32. CUDA uses `CUBLAS_WORKSPACE_CONFIG=:4096:8` unless already configured. ONNX Runtime requests deterministic compute and sequential execution. TensorRT uses a prebuilt engine: this flag does not change tactics or guarantee engine determinism. Seeds/settings do **not** guarantee bitwise equivalence across runtime versions, hardware, providers, or operating systems, and do not make measured durations repeatable. Actual settings and scope are in `model_info.json`.
+## Artifacts (not in Git)
 
-`availability` accepts `min_free_vram_mb` (MiB), `max_gpu_utilization_percent`, `timeout_s` (default 60 seconds), and `poll_s` (default 1 second). Thresholds require CUDA; `{}` disables waiting. Missing required metrics or timeout fails the run. Polling does not reserve the GPU or ensure isolation. Never kill another user's workload to satisfy thresholds.
+Weights are distributed as **release assets**; locally they live in ignored directories.
 
-## Backends and measurement boundaries
+| Artifact | Local path | Release asset | Identity |
+|---|---|---|---|
+| YOLO11n-pose checkpoint | `models/checkpoints/yolo11/yolo11n-pose.pt` | — (download, below) | HF `Ultralytics/YOLO11` rev `8b8ac7d1…`, SHA-256 `869e83fc…9dc0` |
+| YOLO11n-pose TorchScript | `models/yolo11n_pose_640/` | inside `orion-live-kit.tar.gz` | SHA-256 `8e165341…aaa`, AGPL-3.0 |
+| Proxy classifier | `models/attention_gcn_w48_s0/` | inside the kit | SHA-256 `db56050c…dc58` |
+| Pretrained base | `runs/pretrain/actions171/seed-0/best.pt` | `orion-actions171-base.tar.gz` | checkpoint SHA-256 `b0d29810…cb0` |
+| Public skeletons | `data/raw/pyskl/{ntu120,hmdb51}_hrnet.pkl` | — | pinned in `examples/attention_datasets.json` |
+| Built datasets | `data/attention_v1`, `data/pretrain_v1` | — | rebuild in about 35 s from the raw pickles |
 
-* **PyTorch:** built-in `smoke` is elementwise scale/bias/ReLU, not a representative vision network. Otherwise provide a TorchScript model accepting one configured tensor.
-* **ONNX Runtime:** provide a single-floating-input ONNX model matching shape and dtype. Selected provider must be available; CUDA does not silently fall back to CPU. Synchronous `session.run` includes input/output transfers and host outputs. CUDA-event inference timing is unavailable.
-* **TensorRT:** provide a compatible serialized engine, CUDA and PyTorch. Requires named I/O and `execute_async_v3` (TensorRT 8.5+), one execution input, and resolvable outputs in the first optimization profile. Shape-tensor inputs and unresolved/data-dependent output dimensions are unsupported. Precision validates the engine input I/O dtype and supported output buffer dtypes; it does **not** rebuild the engine or measure/change its internal arithmetic precision. Output buffers stay on GPU.
-
-Initialization, model loading, synthetic input allocation and optional FLOP profiling precede warmup and are excluded from latency samples. Preprocessing selects preallocated input; postprocessing retains outputs. There is no image decode, resize, normalization, detection decoding, or application decision. Inference wall time is runtime invocation through completion, including synchronization and backend transfers. CUDA-event time is reported for PyTorch CUDA and TensorRT only. End-to-end time covers these defined synthetic stages, including measurement overhead, not camera-to-decision latency; it need not equal the sum of stage measurements.
-
-Serialized size is bytes on disk (built-in smoke uses an in-memory `torch.save` state dictionary, not an executable model). Model SHA-256 covers model-file bytes only, not ONNX external tensor data. PyTorch parameter count is parameter elements, excluding buffers; ONNX count, when available, is initializer elements, not trainable parameters. FLOPs are a supported-operator **estimate per forward invocation**, not measured hardware operations. Optional `torch.utils.flop_counter` dispatch counting is preferred because event profiling can omit scripted convolutions even while returning other nonzero counts; event profiling is the fallback. Multiply-adds count as two FLOPs; unsupported operators may be omitted. Method/scope is recorded. Unknown counts/estimates are null with reasons, never inferred from file size.
-
-## Output schema and units
-
-Each run gets a unique directory and adjacent `.tar.gz`. CLI completion prints `run_dir=...`, `archive=...`, `status=...`; completed exits zero, failed/interrupted exits nonzero. Invalid config or failures before directory creation may have no artifacts. SIGINT/SIGTERM normally finalize an interrupted archive; SIGKILL, storage failure, or machine loss can leave incomplete artifacts. Inspect status, errors and warnings before using partial data.
-
-| Artifact | Contents |
-|---|---|
-| `config.json` | Effective configuration, resolved paths |
-| `environment.json` | Host/OS/Python, installed runtime versions, CUDA visibility, GPU/driver discovery and availability errors, harness version and source-file SHA-256 fingerprints |
-| `model_info.json` | Backend, model, shape/dtype, runtime settings, size/hash/count metadata, measurement and determinism scope |
-| `summary.json` | `schema_version: "1.0"`, status (`completed`, `failed`, `interrupted`), `error`, `warnings`, `warmup_completed`, `completed_iterations`, `warmup_metrics`, steady `metrics`, `memory`, `telemetry` |
-| `latency_samples.csv` | `phase,iteration,preprocess_ms,inference_wall_ms,inference_gpu_ms,postprocess_ms,end_to_end_ms` |
-| `gpu_telemetry.csv` | Timestamp/phase, selected GPU, utilization, VRAM, power, temperature, clocks, other compute processes, errors |
-| `system_telemetry.csv` | Timestamp/phase, host CPU utilization, total/available host memory, benchmark process RSS |
-| `benchmark.log`, `report.md` | Lifecycle/errors and human-readable report |
-| `manifest.sha256` | SHA-256 plus two spaces plus filename, covering all run files except itself |
-| `model_provenance.json` | Optional verified model-manifest snapshot, also embedded under `model_info.provenance`; included in run hashes/archive |
-
-Latency CSV phase is `warmup` or `steady`; iteration is zero-based within each phase. All five latency columns are **milliseconds**; unavailable GPU durations are empty CSV cells / JSON null, not zero. Each stage distribution in `metrics` and `warmup_metrics` contains `count,mean,median,p90,p95,p99`; percentiles linearly interpolate sorted observations. Warmup and steady distributions are separate. Empty distributions have count zero and null statistics.
-
-Steady `metrics.measured_loop_seconds` is wall seconds including measurement, synchronization and sample-writing overhead. `inferences_per_second` is completed steady invocations / loop seconds. `effective_fps` multiplies by batch size: synthetic batch elements per second, not measured camera FPS.
-
-Memory fields ending `_bytes` are bytes. Backend `gpu_allocated_bytes`, `gpu_reserved_bytes`, `gpu_peak_allocated_bytes`, `gpu_peak_reserved_bytes` describe the selected device's **process-wide PyTorch allocator only** where supported, not total GPU usage. Peaks reset after warmup; persistent model/input/live output remain included. TensorRT internal/driver allocations and other processes are excluded. `process_peak_rss_bytes` is Linux process peak RSS since process start, including initialization and warmup. Null values and scope/reason fields distinguish unavailable measurements.
-
-Telemetry timestamps are UTC ISO 8601; utilization is percent, `_mb` memory fields are MiB despite the legacy column names, power is watts, temperature Celsius, clocks MHz. Host CPU utilization is aggregate host CPU activity between samples, not benchmark-only CPU use; the initial utilization may be blank. `other_compute_processes` is a JSON array (PID, name, VRAM MiB), or unavailable; blank cells/errors do not establish zero contention. Telemetry is sampled and can miss brief activity, especially tiny smoke runs; it is not a reservation or a source of exact inference power/energy measurements.
-
-Both telemetry CSVs start with `timestamp,timestamp_ns,monotonic_ns,phase,phase_end,collection_duration_ms`. Timestamps are collected independently per stream: UTC text has nine fractional digits, epoch and monotonic values are integer nanoseconds, collection duration is milliseconds. Phase values are `availability`, `initialization`, `warmup`, `steady`, `finalization` (initial fallback `initializing`); `phase_end` reveals collection spanning a phase change.
-
-GPU columns then are `gpu_index,gpu_uuid,gpu_utilization_percent,vram_used_mb,vram_free_mb,vram_total_mb,power_w,temperature_c,graphics_clock_mhz,memory_clock_mhz,other_compute_processes,error`. GPU index is the logical CUDA ordinal; UUID identifies the verified physical GPU. MIG telemetry mapping is unsupported rather than guessed. System columns then are `cpu_utilization_percent,memory_total_mb,memory_available_mb,process_rss_mb,process_rss_peak_mb,error`. RSS peak is process-lifetime peak, not just steady inference.
-
-`summary.telemetry` groups GPU/system CSVs with `phase_sample_counts`, `steady_sampled_metrics` (`count,mean,min,max` per numeric field), `steady_other_compute_processes_seen`, and a scope explanation. These are sampled steady-phase observations, not exact allocation or power peaks; a tiny run may have no steady telemetry samples.
-
-## Aggregation
-
-```sh
-python -m orion_bench.aggregate /absolute/path/to/RUN_ID /absolute/path/to/OTHER_RUN.tar.gz --output results.csv
-python -m orion_bench.aggregate /absolute/path/to/RUN.tar.gz --output results.json
-```
-
-Reads directories and ZIP/TAR archives without extraction. JSON output is an array; CSV is a table. Scalar metadata is flattened under `summary.`, `config.`, `model_info.`, `environment.`; arrays are JSON-encoded strings. `source` and `run` identify each row. Missing/malformed artifacts appear in `artifact_errors`; failed/partial runs remain visible. Passing both a run directory and its archive intentionally produces duplicate rows.
-
-## Task Spooler queues
-
-Install `tsp`, activate the intended environment, then:
-
-```sh
-# Keep the site's existing TS_SOCKET (or default shared queue) for normal jobs.
-scripts/submit_tsp.sh /absolute/path/to/config.json
-# UBC Rover host: honor the existing cooperative gpu-run lock:
-BENCH_GPU_WRAPPER=gpu-run scripts/submit_tsp.sh /absolute/path/to/gpu-config.json
-# Use the printed job ID and the same TS_SOCKET for inspection:
-tsp -s JOB_ID
-tsp -c JOB_ID
-# Gracefully interrupt your own job only:
-tsp -k JOB_ID
-```
-
-The launcher resolves the config, runs from the project root, and preserves exported environment/active Python environment. It does not change queue concurrency. Keep `TS_SOCKET`/`TMPDIR` consistent; do not manipulate someone else's/default shared queue. Task Spooler coordinates only its own queue, not other GPU users. Shared GPU/CPU load, memory pressure, clocks, thermals and power affect comparisons. Desktop limits do not emulate Jetson; Jetson results require the actual hardware/software stack.
-
-`BENCH_GPU_WRAPPER` is optional and names one executable, not a shell command. On this workspace `gpu-run` uses `flock /run/lock/gpu.lock`; it only serializes cooperating jobs and does not establish uncontended hardware. The launcher freezes the absolute Python executable at submission, not the model/config files; avoid changing those files while queued. Final effective config and model-file hash are recorded.
-
-Orion lives at `~/projects/ubc-rover/Orion`, beside the existing `RoverFlake2` and `LearnFlake` repositories. The former parent path `~/projects/ubc-rover-arm` is a compatibility symlink so live rover processes, generated ROS installs and virtual environments retain access. No team repository contents are changed by running this harness.
-
-## First pretrained pose candidate
-
-The first candidate is **YOLO11n-pose**, not a gesture classifier. The official checkpoint is pinned by immutable Hugging Face revision and SHA-256 in `examples/yolo11n_pose_pin.json`. Code/model licensing is AGPL-3.0 or Ultralytics Enterprise; review before redistribution or closed-source deployment. No training or accuracy evaluation is performed.
-
-Use a compatible PyTorch environment with `ultralytics==8.4.174` (`.[pose]` installs that optional dependency). Download with the Hugging Face `hf` CLI, then export entirely on CPU:
+Rebuild the pose export:
 
 ```sh
 hf download Ultralytics/YOLO11 yolo11n-pose.pt --revision 8b8ac7d1fae7468f85dbf89670dd66f41f485aab --local-dir models/checkpoints/yolo11
 python -m orion_bench.prepare_pose --checkpoint models/checkpoints/yolo11/yolo11n-pose.pt --output-dir models/yolo11n_pose_640 --pin examples/yolo11n_pose_pin.json --imgsz 640
-python -m orion_bench run --config examples/yolo11n_pose_cpu.json
 ```
 
-Preparation verifies the checkpoint hash **before pickle loading**, checks the pinned package version, exports a non-frozen raw TorchScript forward, and verifies serialized FP32 predictions against eager export-mode predictions. It supports fixed `[1,3,640,640]` input and 17 keypoints. A repeated preparation verifies the existing artifact/settings instead of overwriting it. `models/` contains generated/downloaded artifacts and is ignored by Git.
-
-For the shared GPU host, submit the six-run worker to the existing queue and cooperative lock:
-
-```sh
-tsp -L OrionPose640 gpu-run "$(command -v python)" "$PWD/scripts/run_pose_candidate.py" --config "$PWD/examples/yolo11n_pose_gpu.json" --output-dir "$PWD/runs/pose-first"
-```
-
-Defaults are seeds **0, 1, 2**, FP32 and FP16, 50 warmup and 200 steady invocations per run, one CPU intra-op thread. The FP16 path casts the FP32 TorchScript model at runtime; it is not a TensorRT engine or a guarantee that every internal operation uses FP16. The worker never modifies queue settings; `--seeds` and `--precisions` permit explicit repeats. SIGTERM is forwarded to the active benchmark child and results are preserved.
-
-Each unique group contains effective configs, console logs, standard per-run archives, `aggregate.csv`, `aggregate.json`, and `group_summary.json`. `measurements_collected` means all requested runs passed the collection checks—not that they meet Jetson limits. Failed/interrupted/unstarted attempts remain visible. Protocol and current evidence are in `notes/POSE_PROTOCOL.md` and `notes/POSE_CANDIDATE.md`.
-
-These measurements include internal pose-head decoding, but exclude image decode, resize/normalization, NMS, application-level pose extraction, tracking and temporal classification. They do not establish camera FPS, gesture accuracy, reaction latency or loaded-Jetson resource headroom. ONNX/TensorRT exports of this candidate are not part of this first TorchScript benchmark.
-
-## Temporal attention-gesture classifier
-
-Public-data proxy for "someone is trying to get the rover's attention" (hand waving vs. confusers vs. everything else), on COCO-17 skeleton sequences. Protocol: `notes/ATTENTION_PROTOCOL.md`; results and limits: `notes/ATTENTION_RESULTS.md`. Datasets go in ignored `data/`; NTU RGB+D 120 is non-commercial research only.
+Rebuild the datasets (downloads about 1.45 GB the first time):
 
 ```sh
 python -m orion_bench.temporal_data --spec examples/attention_datasets.json --raw-dir data/raw/pyskl --output-dir data/attention_v1
+python -m orion_bench.temporal_data --spec examples/pretrain_actions.json   --raw-dir data/raw/pyskl --output-dir data/pretrain_v1
+```
+
+## Environments
+
+- **Workstation** `parsec-ubuntu-vm`: Linux x86-64, RTX 5080 16 GB (shared), Ryzen 9 9950X, 17 GB RAM.
+- **Python:** `/home/pranav/projects/ubc-rover/envs/gesture/bin/python` — torch 2.14.1+cu130, ultralytics 8.4.174, OpenCV 5, NumPy 2.5. It has **no pip**; build packages with system `python3 -m pip`. ONNX and onnxruntime are not installed.
+- **Install elsewhere:** `pip install orion_rover_benchmark-<ver>-py3-none-any.whl` with extras `[live]`, `[train]`, `[pose]`, `[pytorch]`, `[onnxruntime]`. On Jetson, use NVIDIA's JetPack-matched PyTorch wheel (`docs/PORTABLE.md`).
+
+## Common workflows
+
+**Team gesture** (full guide: `docs/GESTURE_WORKFLOW.md`):
+
+```sh
+python -m orion_bench.record_gestures record --pose models/yolo11n_pose_640 --source 0 --person alice --distance 6 --output-dir data/gesture_sessions/alice-6m
+python -m orion_bench.team_dataset --sessions data/gesture_sessions --output-dir data/gesture_v1 --val-people carol --test-people dave,erin --public data/attention_v1
+python scripts/train_attention.py --data data/gesture_v1 --output-dir runs/gesture/ft --init <base>/best.pt --freeze-steps 500 --window 48 --steps 8000 --lr 0.02
+python scripts/eval_attention.py --run runs/gesture/ft/seed-0 --data data/gesture_v1      # test once
+python scripts/export_attention.py --run runs/gesture/ft/seed-0 --output-dir models/gesture_ft
+python -m orion_bench.live_demo --pose models/yolo11n_pose_640 --classifier models/gesture_ft --source 0 --device cuda --output-dir runs/live/ft
+```
+
+**Proxy / pretraining reproduction:**
+
+```sh
 python scripts/train_attention.py --data data/attention_v1 --output-dir runs/attention/w48 --window 48 --steps 20000 --eval-every 2500 --seed 0
-python scripts/eval_attention.py --run runs/attention/w48/seed-0 --data data/attention_v1   # held-out test, once
-python scripts/export_attention.py --run runs/attention/w48/seed-0 --output-dir models/attention_gcn_w48_s0
-python -m orion_bench run --config examples/attention_gcn_cpu.json
+python scripts/train_attention.py --data data/pretrain_v1 --output-dir runs/pretrain/actions171 --objective classify --window 48 --steps 30000 --eval-every 5000 --score-test
 ```
 
-Training selects checkpoint and threshold on validation only; `--score-test` or `eval_attention.py` scores test once for a frozen run.
+Training throughput: one process on the RTX 5080 does about 1,000 steps per 37 s at batch 256. Parallel processes share that rate rather than adding to it, and four processes have run out of 16 GB of GPU memory. Run **at most two at once**; evaluation batches are 512.
 
-## Portable camera and video test kit
+**Benchmarks:** `python -m orion_bench run --config examples/yolo11n_pose_cpu.json` or `examples/attention_gcn_cpu.json`. Pose GPU group: `scripts/run_pose_candidate.py` (see `docs/BENCHMARK.md` and `notes/POSE_PROTOCOL.md`).
 
-Create a transferable archive containing the experimental pose and temporal models:
+**Live kit:** `python3 scripts/package_live_kit.py --output "$PWD/dist/orion-live-kit.tar.gz"`. On the target machine, run `sha256sum -c SHA256SUMS` and follow `docs/PORTABLE.md`.
+
+## Working rules
+
+1. **Shared GPU.** Submit GPU work as `tsp -L <Label> gpu-run <cmd>` (cooperative `flock /run/lock/gpu.lock`). Never kill, reorder or remove other people's jobs. The **Thoth** project (`~/projects/Thoth`, tmux pane `Thoth:0` / `%0`) is the main other GPU user.
+   - **To get the GPU sooner, ask Pranav first.** If he approves, ask the Thoth owner to pause it safely (its tmux pane is the usual route). It keeps scripts in its `pause/` directories and `RESUME_AFTER_ORION.md`.
+   - **Hand back:** when Orion's job finishes, tell Thoth to resume.
+   - **tmux input:** type with `tmux send-keys -t %0 -l '<text>'`, then submit with `tmux send-keys -t %0 -H 0d`.
+2. **Evaluation discipline.** Write a protocol in `notes/` (data, metrics, pass rule) **before** scoring. Make every choice — checkpoint, threshold, configuration — on validation only. Score the test split **once** per frozen configuration and never change anything because of a test number. Use three seeds for claims. Keep failed and out-of-memory runs and logs.
+3. **Splits.** Team data splits by person; public data uses the official splits (NTU cross-subject; validation subjects 4, 17, 27, 38, 49, 56, 74, 84, 95; HMDB split 1). Never mix test people into training or pretraining.
+4. **Notes and ledger.** Each change or owner adds a dated `notes/<Name>.md` and a row in `notes/ledger.csv`. Report verdict first, evidence second, and keep one kind of number per column. Mark anything not actually run as unverified.
+5. **No rover control.** Don't connect outputs to motion or safety systems until the team's acceptance test passes, e.g. ≥90% of gesture performances trigger within 3 s on held-out people **and** zero triggers in 10 minutes of normal activity with bystanders, on the Jetson.
+6. **Licences.** YOLO11n-pose is AGPL-3.0 (or Ultralytics Enterprise). NTU RGB+D 120 is non-commercial research only. HMDB51 is CC BY 4.0. KTH smoke clips (`runs/portable-verification/`) are non-commercial. Keep weights out of Git and the repo private.
+7. **Git and releases.** Branch `main`. Commit or push only when asked. Never commit `data/`, `models/`, `runs/` or `dist/`.
+
+## Release procedure
 
 ```sh
-python scripts/package_live_kit.py --output "$PWD/dist/orion-live-kit.tar.gz"
+# bump version in pyproject.toml and the install snippet below; commit; push
+rm -rf dist/pkg build *.egg-info
+python3 scripts/package_live_kit.py --output "$PWD/dist/orion-live-kit.tar.gz"
+python3 -m pip wheel --no-deps -w dist/pkg .
+python3 -c "import setuptools.build_meta as b; b.build_sdist('dist/pkg')"
+cp dist/orion-live-kit.tar.gz dist/orion-actions171-base.tar.gz dist/pkg/
+(cd dist/pkg && sha256sum * > SHA256SUMS)
+gh release create vX.Y.Z -R Luxaris/Orion --target main --title "Orion X.Y.Z" --notes "..." dist/pkg/*
 ```
 
-Transfer and extract it on the target, verify `SHA256SUMS`, and follow the kit's README or [portable instructions](docs/PORTABLE.md). CPU and NVIDIA CUDA PyTorch are supported; Jetson dependencies must match its JetPack. This experimental pipeline has not been validated on Jetson or for beckoning, and must not control the rover.
+Verify by downloading the release into a temporary directory, running `sha256sum -c SHA256SUMS`, installing the wheel in a fresh virtual environment and importing `orion_bench`.
 
-## Reusable offline smoke
+Current release **v0.3.0**: wheel, sdist, `orion-live-kit.tar.gz`, `orion-actions171-base.tar.gz`, `SHA256SUMS`.
 
 ```sh
-python scripts/smoke_test.py
-python scripts/smoke_test.py --output-dir /tmp/rover-smoke-results
-python scripts/smoke_test.py --tsp
-# Explicit opt-in on compatible CUDA runtime/device:
-python scripts/smoke_test.py --device cuda --gpu-index 0 --tsp
+gh release download v0.3.0 -R Luxaris/Orion
+sha256sum -c SHA256SUMS
+pip install ./orion_rover_benchmark-0.3.0-py3-none-any.whl    # or: pip install "git+ssh://git@github.com/Luxaris/Orion.git@v0.3.0"
 ```
 
-Requires only installed PyTorch (and Python standard library); ONNX is optional and not needed by the smoke. It launches actual `python -m orion_bench run` processes with tiny seeded inputs, verifies warmup/steady samples and independently recomputed distributions, artifact manifest hashes/archive bytes, deliberate missing-model failure and nonzero exit, and JSON/CSV aggregation. It sends SIGTERM only after observing a complete steady CSV row and checks the interrupted archive. No incidental wording or performance thresholds are tested. Outputs are temporary by default; `--output-dir` preserves a unique subdirectory. `--timeout` sets a per-command safety deadline, not a timing acceptance threshold. `--tsp` always creates its own unique private `TS_SOCKET`, uses `tsp -k` for interruption, and stops only its private server. It never operates on the default queue. Deterministic setup means seeded inputs/runtime policy, not identical latency values.
+## Next steps (in order)
 
-The smoke also exports and benchmarks a tiny TorchScript convolution, checking parameter count, model-file hash and the analytic convolution FLOP count when dispatch counting is installed. This catches models that execute correctly but lose profiling information through TorchScript.
+1. **Team agrees on the gesture**, and records it in `docs/GESTURE_WORKFLOW.md`.
+2. **Record at least 5 people.** Vary distance (3–20 m), angle, light, suit and bystanders. Include gesture, other and confuser segments, and continuous normal-activity video for false-trigger testing. Use the rover's own camera and mast height.
+3. **Write the protocol**, then fine-tune from `orion-actions171-base` with 3 seeds. Choose threshold and trigger k/m on validation people; test once on held-out people.
+4. **Check the pose-source gap.** Compare fine-tuning with and without public negatives, since public skeletons come from HRNet and the rover uses YOLO.
+5. **Measure on the real Jetson Orin NX** under the normal robotics load: camera → trigger latency, processed frame rate, memory, power mode. Then consider TensorRT/ONNX export. ONNX tooling is not installed yet.
+6. **Integrate with the rover** (ROS message or service) only after the acceptance test passes. Keep voice Follow! as the fallback.
 
-## Evidence and known runtime limits
+## Known limitations
 
-The original `v0_1` ZIP was not found in the supplied `/tmp` or `/home` searches. This is a new implementation, not a verified recreation of that archive.
-
-Verified from this repository: editable installation; direct CPU smoke; private-TSP CPU and CUDA smoke (built-in model, TorchScript convolution, intentional model-load failure, SIGTERM, manifest/archive bytes and CSV/JSON aggregation); ONNX Runtime CPU fixture inference; CUDA FP16 and UUID visibility; availability timeout and invalid configurations; actual submission script with a spaced config path; steady host CPU/RSS telemetry. Evidence and exact locations are in `notes/INTEGRATION.md` and `notes/ledger.csv`.
-
-TensorRT execution, ONNX Runtime CUDA, multi-GPU/MIG behavior and real Jetson performance remain unverified. No performance or model-suitability claim follows from these functional checks. Recent PyTorch versions warn that TorchScript tracing is deprecated; this harness currently accepts TorchScript files for the PyTorch backend, not `torch.export` programs.
-
-Jetson systems without `nvidia-smi` retain the same artifact schema with unavailable GPU telemetry and explicit errors. Availability thresholds requiring those metrics cannot succeed there; use `{}` until a board-specific telemetry source is available. No desktop utilization, memory cap, power limit, or thread count is a Jetson equivalence claim.
+- **Pose source:** public skeletons are HRNet, not YOLO11n-pose.
+- **Gesture coverage:** no public beckoning or leg-waving data. HMDB in-the-wild performance is weak.
+- **Tracking:** greedy IoU matching that can swap identities. Gaps longer than 2.5 samples reset the window.
+- **Timing:** video timestamps assume the nominal frame rate; cameras use a monotonic clock.
+- **TorchScript:** tracing is deprecated in recent PyTorch, and Jetson PyTorch compatibility with these files is untested.
+- **Old validation note:** the 32-frame vs 48-frame window comparison also changed the step count, so it doesn't isolate the window effect.
