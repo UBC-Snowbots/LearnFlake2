@@ -120,6 +120,43 @@ def threshold_for(score, labels, classes, max_fpr):
     return float(np.quantile(negative, 1 - max_fpr)) if len(negative) else 0.5
 
 
+@torch.inference_mode()
+def classify_clips(model, split, device, stride, batch_size=512):
+    """Per-clip class probabilities = mean softmax over causal sliding windows."""
+    model.eval()
+    jobs = []
+    for i in range(len(split)):
+        length = split.offsets[i + 1] - split.offsets[i]
+        ends = range(min(length, split.window), length + 1, stride)
+        jobs.extend((i, e) for e in (ends if len(ends) else [length]))
+    total = counts = None
+    for begin in range(0, len(jobs), batch_size):
+        chunk = jobs[begin:begin + batch_size]
+        batch = torch.stack([split.crop(i, e) for i, e in chunk]).to(device)
+        prob = model(batch).softmax(-1).float().cpu().numpy()
+        if total is None:
+            total, counts = np.zeros((len(split), prob.shape[1])), np.zeros(len(split))
+        index = [i for i, _ in chunk]
+        np.add.at(total, index, prob)
+        np.add.at(counts, index, 1)
+    return total / counts[:, None]
+
+
+def accuracy(prob, labels):
+    top5 = np.argsort(-prob, axis=1)[:, :5]
+    return {"top1": float((top5[:, 0] == labels).mean()),
+            "top5": float((top5 == labels[:, None]).any(axis=1).mean()), "clips": int(len(labels))}
+
+
+def load_init(model, path, device):
+    """Load pretrained weights; layers whose shape differs (e.g. the class head) stay fresh."""
+    state = torch.load(path, map_location=device)
+    own = model.state_dict()
+    kept = {k: v for k, v in state.items() if k in own and own[k].shape == v.shape}
+    model.load_state_dict(kept, strict=False)
+    return {"loaded": len(kept), "reinitialized": sorted(set(own) - set(kept))}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", required=True, type=Path)
@@ -136,8 +173,13 @@ def main():
     parser.add_argument("--width", type=int, default=48)
     parser.add_argument("--score-test", action="store_true",
                         help="score held-out test once; only for frozen final configurations")
-    parser.add_argument("--sample-ratio", default="1,1,1",
-                        help="relative per-class sampling share, in dataset class order")
+    parser.add_argument("--sample-ratio", default=None,
+                        help="relative per-class sampling share, in dataset class order (default: equal)")
+    parser.add_argument("--objective", choices=("detect", "classify"), default="detect",
+                        help="detect: target class 1 vs rest (AP); classify: all classes (top-1), for pretraining")
+    parser.add_argument("--init", type=Path, help="pretrained best.pt to fine-tune from")
+    parser.add_argument("--freeze-steps", type=int, default=0,
+                        help="train only the class head for this many initial steps")
     args = parser.parse_args()
 
     report = json.loads((args.data / "dataset_report.json").read_text())
@@ -153,13 +195,18 @@ def main():
 
     # Balance classes by sampling, rather than weighting the loss.
     counts = np.bincount(train.labels, minlength=len(classes)).astype(float)
-    ratio = np.array([float(x) for x in args.sample_ratio.split(",")])
-    weights = torch.from_numpy(ratio[train.labels] / counts[train.labels])
+    ratio = np.ones(len(classes)) if args.sample_ratio is None else np.array([float(x) for x in args.sample_ratio.split(",")])
+    weights = torch.from_numpy(ratio[train.labels] / np.maximum(counts[train.labels], 1))
     model = AttentionGCN(len(classes), width=args.width).to(device)
+    init = load_init(model, args.init, device) if args.init else None
+    if init:
+        print(json.dumps({"init": str(args.init), **init}), flush=True)
+    backbone = [p for n, p in model.named_parameters() if not n.startswith("head.")]
+    select = "average_precision" if args.objective == "detect" else "top1"
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,
                                 nesterov=True, weight_decay=5e-4)
     schedule = torch.optim.lr_scheduler.OneCycleLR(optimizer, args.lr, total_steps=args.steps,
-                                                   pct_start=0.05)
+                                                   pct_start=max(0.05, 2 / args.steps))
     loss_fn = nn.CrossEntropyLoss(label_smoothing=0.05)
     history, best = [], None
     started = time.monotonic()
@@ -171,16 +218,22 @@ def main():
         loss = loss_fn(model(batch), target)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
+        if step <= args.freeze_steps:
+            for parameter in backbone:
+                parameter.grad = None
         optimizer.step()
         schedule.step()
         if step % args.eval_every == 0 or step == args.steps:
-            score = score_clips(model, val, device, args.eval_stride)
-            threshold = threshold_for(score, val.labels, classes, args.max_fpr)
-            entry = {"step": step, "loss": loss.item(), "seconds": time.monotonic() - started,
-                     "val": metrics(score, val.labels, threshold, classes)}
+            if args.objective == "detect":
+                score = score_clips(model, val, device, args.eval_stride)
+                threshold = threshold_for(score, val.labels, classes, args.max_fpr)
+                result = metrics(score, val.labels, threshold, classes)
+            else:
+                result = accuracy(classify_clips(model, val, device, args.eval_stride), val.labels)
+            entry = {"step": step, "loss": loss.item(), "seconds": time.monotonic() - started, "val": result}
             history.append(entry)
             print(json.dumps(entry), flush=True)
-            if best is None or entry["val"]["average_precision"] > best["val"]["average_precision"]:
+            if best is None or entry["val"][select] > best["val"][select]:
                 best = entry
                 torch.save(model.state_dict(), run / "best.pt")
 
@@ -192,8 +245,12 @@ def main():
         "parameters": sum(p.numel() for p in model.parameters()),
         "checkpoint_sha256": hashlib.sha256((run / "best.pt").read_bytes()).hexdigest(),
         "selected_step": best["step"], "validation": best["val"], "history": history,
+        "objective": args.objective, "width": args.width, "init": init,
     }
-    if args.score_test:
+    if args.score_test and args.objective == "classify":
+        test = Split(load(args.data / "test.npz"), args.window)
+        summary["test"] = accuracy(classify_clips(model, test, device, args.eval_stride), test.labels)
+    elif args.score_test:
         test = Split(load(args.data / "test.npz"), args.window)
         test_score = score_clips(model, test, device, args.eval_stride)
         summary["test"] = metrics(test_score, test.labels, best["val"]["threshold"], classes)
