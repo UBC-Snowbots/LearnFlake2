@@ -13,3 +13,4 @@ date,owner,verdict,cpu_lifecycle_cases,cuda_lifecycle_cases,onnx_cpu_cases,inval
 2026-11-07,KitPackaging,implemented; checks delegated to integrator,0,0,0,0,0,notes/KitPackaging.md
 2026-11-07,ParentPortableIntegration,pass CPU video transfer smoke; Jetson unverified,1,0,0,0,0,notes/PORTABLE_INTEGRATION.md
 2026-11-07,ParentPretrain,pretrained 171-action base; fine-tune transfer shown on val,0,2,0,0,2,notes/PRETRAIN_RESULTS.md
+2026-11-19,FollowProtocol,protocol drafted; nothing implemented or tested,0,0,0,0,0,docs/FOLLOW_PROTOCOL.md

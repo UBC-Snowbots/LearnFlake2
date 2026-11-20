@@ -16,6 +16,7 @@ Private repo: [Luxaris/Orion](https://github.com/Luxaris/Orion). Owner: Pranav. 
 | Recording → dataset → train → export → live tools | Built. Smoke-tested end to end on public lab clips (pipeline only). | `docs/GESTURE_WORKFLOW.md` |
 | Portable camera/video kit | CPU video run verified after transfer. Live camera, CUDA kit path and **Jetson are unverified**. | `notes/PORTABLE_INTEGRATION.md` |
 | Team gesture model | **Not started: no team recordings yet.** | — |
+| Follow! after detection (lock, track, Nav2 follow, stop within 3 m) | **Protocol drafted, nothing implemented.** Depends on RoverFlake2 odometry, twist mux, camera depth and Nav2 bringup. | `docs/FOLLOW_PROTOCOL.md` |
 
 **Nothing here may drive the rover.** No model is validated for our gesture, on YOLO keypoints from our camera, on Jetson, or against continuous-video false-trigger rates.
 
@@ -61,7 +62,7 @@ flowchart LR
 | `scripts/package_live_kit.py` | Builds `orion-live-kit.tar.gz` with `SHA256SUMS`. |
 | `scripts/run_pose_candidate.py`, `smoke_test.py`, `submit_tsp.sh` | Pose benchmark group runner, harness smoke, TSP submission. |
 | `examples/` | Harness configs, `yolo11n_pose_pin.json`, `attention_datasets.json` (proxy labels), `pretrain_actions.json` (171 classes). |
-| `docs/` | `GESTURE_WORKFLOW.md`, `FINETUNE.md`, `PORTABLE.md` (kit README), `BENCHMARK.md`. |
+| `docs/` | `GESTURE_WORKFLOW.md`, `FINETUNE.md`, `PORTABLE.md` (kit README), `BENCHMARK.md`, `FOLLOW_PROTOCOL.md` (post-detection following with Nav2). |
 | `notes/` | Dated protocols, results and handoffs, plus `ledger.csv` (one row per owner or change). |
 | `data/`, `models/`, `runs/`, `dist/` | **Git-ignored.** Datasets, weights, run outputs, build products (see below). |
 
@@ -167,7 +168,7 @@ pip install ./orion_rover_benchmark-0.3.0-py3-none-any.whl    # or: pip install 
 3. **Write the protocol**, then fine-tune from `orion-actions171-base` with 3 seeds. Choose threshold and trigger k/m on validation people; test once on held-out people.
 4. **Check the pose-source gap.** Compare fine-tuning with and without public negatives, since public skeletons come from HRNet and the rover uses YOLO.
 5. **Measure on the real Jetson Orin NX** under the normal robotics load: camera → trigger latency, processed frame rate, memory, power mode. Then consider TensorRT/ONNX export. ONNX tooling is not installed yet.
-6. **Integrate with the rover** (ROS message or service) only after the acceptance test passes. Keep voice Follow! as the fallback.
+6. **Integrate with the rover** only after the acceptance test passes, following `docs/FOLLOW_PROTOCOL.md` (interfaces, state machine, Nav2 backend, staged tests T0–T4). Keep voice Follow! as the fallback.
 
 ## Known limitations
 
