@@ -23,6 +23,13 @@ TRACK_IOU = 0.3
 TRACK_GAP = 0.5
 TARGET_FPS = 15.0
 WINDOW = 48
+COCO_EDGES = ((5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (5, 11), (6, 12), (11, 12),
+              (11, 13), (13, 15), (12, 14), (14, 16), (0, 5), (0, 6))
+
+
+def live_source(source):
+    """Camera index, /dev/video* path, stream URL or GStreamer pipeline (ends in appsink): timestamped by capture clock."""
+    return source.isdecimal() or source.startswith("/dev/video") or "://" in source or "appsink" in source
 
 
 def artifact(path, filename):
@@ -164,8 +171,8 @@ def run(args):
         raise ValueError("CUDA was requested but is not available")
     if args.max_frames is not None and args.max_frames <= 0:
         raise ValueError("--max-frames must be positive")
-    camera = args.source.isdecimal()
-    source = int(args.source) if camera else args.source
+    camera = live_source(args.source)
+    source = int(args.source) if args.source.isdecimal() else args.source
     if not camera and not Path(source).is_file():
         raise ValueError(f"Local video file not found: {source}")
     output = Path(args.output_dir)
@@ -177,12 +184,12 @@ def run(args):
                "trigger_rule": f"{args.trigger_k} of last {args.trigger_m} scored frames above threshold",
                "frames": 0, "processed_fps": None, "triggers": [],
                "note": "Diagnostic only; not validated for rover control."}
-    capture = writer = None
+    capture = writer = preview = None
     start = time.perf_counter()
     try:
         pose = torch.jit.load(str(pose_path), map_location=args.device).eval()
         classifier = torch.jit.load(str(classifier_path), map_location=args.device).eval()
-        capture = cv2.VideoCapture(source)
+        capture = cv2.VideoCapture(source, cv2.CAP_GSTREAMER) if "appsink" in args.source else cv2.VideoCapture(source)
         if not capture.isOpened():
             raise RuntimeError(f"Cannot open source: {args.source}")
         source_fps = float(capture.get(cv2.CAP_PROP_FPS))
@@ -211,6 +218,10 @@ def run(args):
                     if not writer.isOpened():
                         raise RuntimeError("Cannot open output video writer (mp4v)")
                     summary["frame_size"] = [width, height]
+                    if args.preview:
+                        preview = cv2.VideoWriter(args.preview, cv2.CAP_GSTREAMER, 0, output_fps, (width, height))
+                        if not preview.isOpened():
+                            raise RuntimeError("Cannot open --preview GStreamer pipeline")
                 elif [width, height] != summary["frame_size"]:
                     raise RuntimeError("Source frame dimensions changed")
                 pose_start = time.perf_counter()
@@ -244,9 +255,13 @@ def run(args):
                     colour = (0, 0, 255) if triggered else (0, 255, 0)
                     cv2.rectangle(frame, tuple(box[:2].astype(int)), tuple(box[2:].astype(int)), colour, 2)
                     cv2.putText(frame, f"ID {detection['id']} {status}", (int(box[0]), max(15, int(box[1]) - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 1, cv2.LINE_AA)
+                    for a, b in COCO_EDGES:
+                        (xa, ya, ca), (xb, yb, cb) = detection["points"][a], detection["points"][b]
+                        if min(ca, cb) >= 0.25:
+                            cv2.line(frame, (int(xa * width), int(ya * height)), (int(xb * width), int(yb * height)), colour, 2, cv2.LINE_AA)
                     for x, y, confidence in detection["points"]:
                         if confidence >= 0.25:
-                            cv2.circle(frame, (int(x * width), int(y * height)), 2, (0, 255, 255), -1)
+                            cv2.circle(frame, (int(x * width), int(y * height)), 3, (0, 255, 255), -1)
                     people.append({"track_id": detection["id"], "box_xyxy": box.tolist(),
                                    "pose_confidence": detection["confidence"], "keypoints_xy_normalized_confidence": detection["points"].tolist(),
                                    "window_samples": len(track["samples"]), "target_score": score,
@@ -254,6 +269,11 @@ def run(args):
                                    "triggered": triggered})
                 classifier_ms = (time.perf_counter() - classifier_start) * 1000
                 writer.write(frame)
+                if preview is not None:
+                    fps = summary["frames"] / max(time.perf_counter() - start, 1e-6)
+                    cv2.putText(frame, f"{fps:.0f} fps  {args.device}  threshold {threshold or 0:.3f}  trigger {args.trigger_k}/{args.trigger_m}",
+                                (8, height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                    preview.write(frame)
                 total_ms = (time.perf_counter() - frame_start) * 1000
                 record = {"frame": summary["frames"], "timestamp_seconds": timestamp, "people": people,
                           "latency_ms": {"capture": (captured - frame_start) * 1000, "pose": pose_ms,
@@ -275,6 +295,8 @@ def run(args):
             capture.release()
         if writer is not None:
             writer.release()
+        if preview is not None:
+            preview.release()
         elapsed = time.perf_counter() - start
         summary["elapsed_seconds"] = elapsed
         summary["processed_fps"] = summary["frames"] / elapsed if elapsed > 0 else None
@@ -287,10 +309,12 @@ def main():
     parser.add_argument("--pose", required=True, help="Local pose TorchScript file or artifact directory")
     parser.add_argument("--classifier", required=True, help="Local classifier TorchScript file or artifact directory")
     parser.add_argument("--classifier-manifest", help="Optional classifier manifest (default: adjacent model_manifest.json)")
-    parser.add_argument("--source", required=True, help="Nonnegative camera index or local video path")
+    parser.add_argument("--source", required=True,
+                        help="Camera index, /dev/video* path, stream URL, GStreamer pipeline ending in appsink, or local video path")
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-frames", type=int)
+    parser.add_argument("--preview", help="GStreamer pipeline starting with appsrc that also receives each overlay frame, for a live view")
     parser.add_argument("--trigger-k", type=int, default=6, help="frames above threshold needed to trigger")
     parser.add_argument("--trigger-m", type=int, default=8, help="recent scored frames considered")
     args = parser.parse_args()

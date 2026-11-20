@@ -39,7 +39,17 @@ python3 -m orion_bench.live_demo \
   --source 0 --device cuda --output-dir results/camera
 ```
 
-A numeric source is an OpenCV camera index; a nonnumeric source is a video path. Use `--max-frames 150` for a bounded unattended smoke. Use `--help` for available options. The demo is headless and saves an overlay video and machine-readable output to the chosen directory. Stop camera capture with Ctrl-C. Timing is for this experimental pipeline, not a robotics deadline guarantee; do not run it on a loaded rover without operator supervision.
+`--source` takes a camera index (`0`), a `/dev/video*` path, a stream URL (`rtsp://…`, `udp://…`), or a GStreamer pipeline ending in `appsink`; these are live sources, timestamped by the capture clock. Anything else is a local video path. Use `--max-frames 150` for a bounded unattended smoke. Use `--help` for available options. The demo is headless and saves an overlay video and machine-readable output to the chosen directory. Stop camera capture with Ctrl-C. Timing is for this experimental pipeline, not a robotics deadline guarantee; do not run it on a loaded rover without operator supervision.
+
+To test the Jetson with a camera plugged into a laptop, stream H.264 over the USB link and decode it on the Jetson's hardware decoder. RTP/MJPEG from ffmpeg decodes with corrupted colour, so don't use it:
+
+```sh
+# laptop (Windows, RealSense D435i RGB)
+ffmpeg -f dshow -video_size 640x480 -framerate 30 -i "video=Intel(R) RealSense(TM) Depth Camera 435i RGB" -an \
+  -c:v libx264 -preset ultrafast -tune zerolatency -g 15 -bf 0 -pix_fmt yuv420p -b:v 6M -f mpegts "udp://192.168.55.1:5000?pkt_size=1316"
+# Jetson
+python3 -m orion_bench.live_demo ... --device cuda --source "udpsrc port=5000 caps=video/mpegts ! tsdemux ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR ! appsink drop=true max-buffers=1 sync=false"
+```
 
 The temporal model needs a history of 48 pose samples at 15 Hz (roughly 3.2 s); scores are not immediate. It expects a consistent tracked person, image-normalized COCO-17 keypoints and confidence. Occlusion, tracking identity changes, camera motion, target distance, and missed poses can invalidate the history. The validation threshold was calibrated on a different pose source and dataset, not this camera pipeline; it must not be interpreted as a calibrated probability of intent.
 
