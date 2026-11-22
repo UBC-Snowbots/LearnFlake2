@@ -11,10 +11,6 @@ work changes, so the list below is the current state, not a fixed plan.
 | [`auto_press_key/`](auto_press_key/README.md) | Isaac Sim / Isaac Lab keypad typing with the rover2026 arm: IK plus a small RL residual types full 6-digit codes. | 99.2% full codes in simulation over 1000 codes (IK alone: 22.0%); re-checked from this repo at 99.0% over 100 codes. Joint limits are placeholders until the motor datasheets are in. |
 | [`orion/`](orion/README.md) | Vision for the URC Autonomy mission: recognise the astronaut's Follow! gesture with a pose model plus a temporal skeleton classifier, on a Jetson Orin NX. Includes the benchmark harness and the post-detection Follow! protocol. | Live on the Jetson at about 21 fps with a webcam stream. The classifier is a stand-in trained on public hand-waving clips; no team gesture recordings yet. |
 
-Earlier work: the MuJoCo/RoboSuite typing project stays in
-[UBC-Snowbots/LearnFlake](https://github.com/UBC-Snowbots/LearnFlake), kept as is. The key layout and reward ideas in
-`auto_press_key/` come from Pranav's HRL work there.
-
 ## Quick start
 
 Every sub-project is self-contained: `cd` into its folder and follow its README. Two examples:
