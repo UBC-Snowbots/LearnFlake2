@@ -1,0 +1,44 @@
+{
+  "description": "Attention-seeking gesture proxy: hand waving vs. arm/leg confusers vs. everything else. 2D COCO-17 HRNet skeletons published by PYSKL/OpenMMLab.",
+  "classes": ["other", "attention", "confuser"],
+  "default_class": "other",
+  "target_fps": 15,
+  "min_frames": 8,
+  "sources": [
+    {
+      "name": "ntu120",
+      "url": "https://download.openmmlab.com/mmaction/pyskl/data/nturgbd/ntu120_hrnet.pkl",
+      "filename": "ntu120_hrnet.pkl",
+      "bytes": 1238461428,
+      "sha256": "aaf1f928b4629fa9a0850528d43fdd8d920532805d16672bfdda78085b649df8",
+      "fps": 30,
+      "train_split": "xsub_train",
+      "test_split": "xsub_val",
+      "val_subjects": [4, 17, 27, 38, 49, 56, 74, 84, 95],
+      "label_map": {
+        "22": "attention",
+        "9": "confuser", "21": "confuser", "23": "confuser", "30": "confuser",
+        "37": "confuser", "39": "confuser", "48": "confuser", "67": "confuser",
+        "92": "confuser", "94": "confuser", "96": "confuser", "97": "confuser",
+        "101": "confuser", "103": "confuser"
+      }
+    },
+    {
+      "name": "hmdb51",
+      "url": "https://download.openmmlab.com/mmaction/pyskl/data/hmdb51/hmdb51_hrnet.pkl",
+      "filename": "hmdb51_hrnet.pkl",
+      "bytes": 212759219,
+      "sha256": "8d2c7a5348ed1c9897ea3c69aee025e2c17cc672c6f361683ce1784d0a784287",
+      "license": "CC BY 4.0 (Kuehne et al., ICCV 2011)",
+      "fps": 30,
+      "train_split": "train1",
+      "test_split": "test1",
+      "val_fraction": 0.15,
+      "seed": 0,
+      "label_map": {
+        "50": "attention",
+        "4": "confuser", "21": "confuser", "27": "confuser", "47": "confuser"
+      }
+    }
+  ]
+}

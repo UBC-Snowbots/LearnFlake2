@@ -1,0 +1,11 @@
+# Portable kit integration — 2026-11-07
+
+**Verdict:** transferable CPU video smoke passed; live cameras, CUDA kit execution and Jetson remain unverified. Not approved for autonomous operation.
+
+- Built `dist/orion-live-kit.tar.gz`; SHA-256 `c1945e638e13f2677d911472fd7d673d31e31c89563608fdaa1ba910c24cd9e9`. Archive contains locally exported model artifacts and manifests, Python sources, portable instructions, and per-file checksums; no datasets, Python runtime or CUDA binaries.
+- Extracted to `runs/portable-verification/extracted/orion-live-kit` and successfully ran `sha256sum -c SHA256SUMS` for every listed file.
+- Ran extracted kit on CPU against the public [KTH hand-waving sample](https://www.csc.kth.se/cvap/actions/person15_handwaving_d1_uncomp.avi), 100 frames, 25 fps source. Saved `runs/portable-verification/transferred/{overlay.mp4,frames.jsonl,summary.json}`; successful completion and recorded detections and classification scores. Prior local-source run had 100 frames with a detected person and 21 frame-level classifier scores. This is an execution smoke, not an accuracy or representative throughput experiment. KTH states non-commercial use.
+- Invalid input file returned exit code 2 and a clear error. Other cameras, interrupted capture and unavailable-CUDA handling were not exercised in this integration check.
+- Coordinates and score are experimental: classifier was trained on HRNet rather than YOLO pose, lacks beckoning/leg-wave labels, and the validation threshold does not establish production accuracy on this pipeline. Frame-level output does not establish continuous-video false-alarm rate. Video timestamps use nominal source FPS; USB cameras use capture-time monotonic clock. Dropped/missed detections and low throughput can prevent full temporal windows; box association can swap identities.
+- PyTorch 2.14.1+cu130 exported TorchScript; target Jetson PyTorch compatibility requires a real board and JetPack-specific installation. See `docs/PORTABLE.md` for isolation, license and installation instructions.
+- CameraPipeline and KitPackaging were written as separate pieces (see their notes); this note records the integration check that verified them and the final adjustments. Nothing was committed or published from this check.

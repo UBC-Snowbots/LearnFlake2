@@ -1,0 +1,2 @@
+date,owner,verdict,numbers,where
+2026-11-06,TelemetryHardening,implemented-not-verified,0 checks run;0 experiments;0 commits,rover_bench/telemetry.py;notes/TelemetryHardening.md

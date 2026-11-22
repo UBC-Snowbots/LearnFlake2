@@ -1,0 +1,2 @@
+date,owner,verdict,numbers,where
+2026-11-07,KitPackaging,implemented-not-run,"2 models; 2 model manifests; 1 SHA256SUMS; 0 verification runs","scripts/package_live_kit.py; notes/KitPackaging.md"

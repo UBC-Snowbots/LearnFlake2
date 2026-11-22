@@ -1,0 +1,17 @@
+{
+  "backend": "pytorch",
+  "model": "smoke",
+  "device": "cpu",
+  "gpu_index": 0,
+  "input_shape": [1, 3, 224, 224],
+  "precision": "fp32",
+  "warmup": 10,
+  "iterations": 100,
+  "seed": 42,
+  "deterministic": true,
+  "cpu_threads": 1,
+  "output_root": "./benchmark_results",
+  "platform_label": "cpu-smoke",
+  "telemetry_interval_s": 1.0,
+  "availability": {}
+}

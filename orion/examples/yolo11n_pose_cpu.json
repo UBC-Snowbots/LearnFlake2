@@ -1,0 +1,17 @@
+{
+  "backend": "pytorch",
+  "model": "../models/yolo11n_pose_640/yolo11n-pose.torchscript",
+  "model_manifest": "../models/yolo11n_pose_640/model_manifest.json",
+  "device": "cpu",
+  "input_shape": [1, 3, 640, 640],
+  "precision": "fp32",
+  "warmup": 50,
+  "iterations": 200,
+  "seed": 0,
+  "deterministic": true,
+  "cpu_threads": 1,
+  "output_root": "../runs/pose-cpu-reference",
+  "platform_label": "desktop-cpu-reference-not-jetson",
+  "telemetry_interval_s": 1.0,
+  "availability": {}
+}
