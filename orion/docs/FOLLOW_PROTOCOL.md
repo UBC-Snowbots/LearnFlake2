@@ -26,6 +26,7 @@ Assumption: the 3 m is measured to the **closest point of the rover**, as for AR
 | Robot description, TF | Mini rover URDF with `base_link`, `lidar_scan_link` (Scanse Sweep), IMU and 2 GPS links. **No camera link.** | branch `feat/rowzaw/add_mini_rover_urdf` |
 | Velocity path | Joystick `drive_control` publishes `/cmd_vel` directly; the mini rover translator turns `/cmd_vel` into CAN with a 0.5 s stale stop. **No twist mux**, so Nav2 and the joystick would fight over `/cmd_vel`. | `src/drive_control`, `mini_rover_translator.cpp` |
 | Depth camera | RealSense D435i and D415 configured as plain UVC video (`cameras_cpp`), **no depth stream**. | `src/cameras_cpp/config/` |
+| Camera input for Orion | `cameras_cpp` publishes `/{name}/image_raw_decoded` (names in `config/cameras.json`). Orion reads `/realsense435i/image_raw_decoded` by default (`live_demo --source ros2`). Colour only; the depth topics of the unmerged `cameras.cpp` are not aligned to colour. | `docs/PORTABLE.md` ("ROS 2 camera input") |
 | Gesture detection | Orion: YOLO11n-pose + causal ST-GCN, 26 fps on the Jetson Orin NX. Stand-in hand-wave model only; tracker is greedy IoU and swaps IDs often (374 IDs in 13 min live). | this repo |
 | LED, sounds | LED issue #237 open; `rover_sounds` package exists. | |
 

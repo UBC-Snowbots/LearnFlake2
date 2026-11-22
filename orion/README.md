@@ -56,7 +56,10 @@ flowchart LR
 | `orion_bench/attention_model.py` | The ST-GCN model and its feature function. |
 | `orion_bench/record_gestures.py` | `record` (camera + timed prompts, auto-labelled) and `extract` (existing video + `labels.csv`) team sessions. |
 | `orion_bench/team_dataset.py` | Team sessions → dataset, split by **person**. Optionally adds public clips as negatives (public wave → confuser). |
-| `orion_bench/live_demo.py` | Headless camera/video pipeline: overlay video, `frames.jsonl`, `summary.json` with triggers and timing. |
+| `orion_bench/live_demo.py` | Headless camera/video/ROS 2 topic pipeline: overlay video, `frames.jsonl`, `summary.json` with triggers and timing. |
+| `orion_bench/ros_source.py` | Latest-frame `sensor_msgs/Image` source for `--source ros2[:<topic>]` (rclpy loaded lazily, no cv_bridge). |
+| `scripts/publish_test_images.py` | Publishes a video or synthetic pattern as an Image topic, to test the ROS 2 input without a camera. |
+| `tests/` | pytest unit tests for the ROS 2 source (`python3 -m pytest tests -q`). |
 | `scripts/train_attention.py` | Training. `--objective detect` (class 1 vs rest, AP, threshold at ≤2% val FPR) or `classify` (top-1). `--init` and `--freeze-steps` for fine-tuning; `--score-test` scores test once. |
 | `scripts/eval_attention.py`, `export_attention.py` | Score a frozen run's test split once; export TorchScript plus manifest. |
 | `scripts/package_live_kit.py` | Builds `orion-live-kit.tar.gz` with `SHA256SUMS`. |
@@ -125,6 +128,22 @@ Training throughput: one process on the RTX 5080 does about 1,000 steps per 37 s
 
 **Live kit:** `python3 scripts/package_live_kit.py --output "$PWD/dist/orion-live-kit.tar.gz"`. On the target machine, run `sha256sum -c SHA256SUMS` and follow `docs/PORTABLE.md`.
 
+## ROS 2 camera input
+
+`live_demo` takes frames from a ROS 2 `sensor_msgs/Image` topic with `--source ros2` or `--source ros2:<topic>`. Plain `ros2` means `/realsense435i/image_raw_decoded`, the decoded output of RoverFlake2 main's `cameras_cpp` pipeline. Every camera in that package's `config/cameras.json` (`realsense415`, `realsense435i`, `logitech`, `suyin`, `science_webcam`, `science_fisheye`) has its own `/{name}/image_raw_decoded` topic.
+
+```sh
+source /opt/ros/jazzy/setup.bash
+python3 -m orion_bench.live_demo --pose models/yolo11n_pose_640 --classifier models/attention_gcn_w48_s0 \
+  --source ros2 --device cuda --output-dir runs/live/ros
+# another camera, or the unmerged cameras.cpp publisher (branch cameron/cameras_cpp):
+#   --source ros2:/logitech/image_raw_decoded      --source ros2:/camera/color/image_raw
+```
+
+Only the newest frame is kept, so a slow Orion lowers the processed frame rate instead of building latency. `timestamp_seconds` comes from the image header stamp (`timestamp_basis: ros_header_stamp` in `summary.json`). With no new frame for 2 s there is a warning, and after 10 s the run fails cleanly (`--ros-warn-after`, `--ros-timeout`). Ctrl-C or SIGTERM stops the node and writes the summary.
+
+To test without a camera, run `python3 scripts/publish_test_images.py` in a second terminal. Unit tests: `python3 -m pytest tests -q` (the ROS parts skip when rclpy is absent). Which topic to use on the rover, how the decoded topic gets to the Jetson, the Python environment, QoS and the depth caveat are in `docs/PORTABLE.md` ("ROS 2 camera input"). Verified on a workstation with ROS 2 Jazzy, CPU and synthetic frames; **not** on the Jetson or a real camera.
+
 ## Working rules
 
 1. **Shared GPU.** Submit GPU work as `tsp -L <Label> gpu-run <cmd>` (cooperative `flock /run/lock/gpu.lock`). Never kill, reorder or remove other people's jobs. The **Thoth** project (`~/projects/Thoth`, tmux pane `Thoth:0` / `%0`) is the main other GPU user.
@@ -175,6 +194,6 @@ pip install ./orion_rover_benchmark-0.3.0-py3-none-any.whl    # or: pip install 
 - **Pose source:** public skeletons are HRNet, not YOLO11n-pose.
 - **Gesture coverage:** no public beckoning or leg-waving data. HMDB in-the-wild performance is weak.
 - **Tracking:** greedy IoU matching that can swap identities. Gaps longer than 2.5 samples reset the window.
-- **Timing:** video timestamps assume the nominal frame rate; cameras use a monotonic clock.
+- **Timing:** video timestamps assume the nominal frame rate; cameras use a monotonic clock; `ros2` sources use the ROS image header stamp.
 - **TorchScript:** tracing is deprecated in recent PyTorch, and Jetson PyTorch compatibility with these files is untested.
 - **Old validation note:** the 32-frame vs 48-frame window comparison also changed the step count, so it doesn't isolate the window effect.
