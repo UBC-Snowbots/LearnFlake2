@@ -1,0 +1,154 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.3"
+    }
+    defaultPrim = "tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE"
+    doc = """Generated from Composed Stage of root layer /tmp/tmpabjkcw_r/MAIN Arm Assembly RevB 2025-2026 V6.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_rover2026_ee_locp1c9i/usdex_rover2026_ee/MAIN Arm Assembly RevB 2025-2026 V6.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_rover2026_ee_locp1c9i/temp_rover2026_ee/rover2026_ee.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+over "tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE" (
+    prepend apiSchemas = ["IsaacRobotAPI"]
+)
+{
+    prepend rel isaac:physics:robotJoints = [
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/root_joint>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/shoulder_joint>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/link_1_joint>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/link1_link2>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/a4_rotation>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/a5_rotation>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/a6_rotation>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/ee_presser_mount>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/ee_tip_joint>,
+    ]
+    prepend rel isaac:physics:robotLinks = [
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1/a3_axis4_housing>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1/a3_axis4_housing/a4_link2>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1/a3_axis4_housing/a4_link2/a5_internal_upright>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1/a3_axis4_housing/a4_link2/a5_internal_upright/a6_EE_holder>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1/a3_axis4_housing/a4_link2/a5_internal_upright/a6_EE_holder/ee_presser>,
+        </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Geometry/base_link/a1_shoulder_base/a2_link_1/a3_axis4_housing/a4_link2/a5_internal_upright/a6_EE_holder/ee_presser/ee_tip>,
+    ]
+    token isaac:robotType = "Default"
+
+    over "Geometry"
+    {
+        over "base_link" (
+            prepend apiSchemas = ["IsaacLinkAPI"]
+        )
+        {
+            over "a1_shoulder_base" (
+                prepend apiSchemas = ["IsaacLinkAPI"]
+            )
+            {
+                over "a2_link_1" (
+                    prepend apiSchemas = ["IsaacLinkAPI"]
+                )
+                {
+                    over "a3_axis4_housing" (
+                        prepend apiSchemas = ["IsaacLinkAPI"]
+                    )
+                    {
+                        over "a4_link2" (
+                            prepend apiSchemas = ["IsaacLinkAPI"]
+                        )
+                        {
+                            over "a5_internal_upright" (
+                                prepend apiSchemas = ["IsaacLinkAPI"]
+                            )
+                            {
+                                over "a6_EE_holder" (
+                                    prepend apiSchemas = ["IsaacLinkAPI"]
+                                )
+                                {
+                                    over "ee_presser" (
+                                        prepend apiSchemas = ["IsaacLinkAPI"]
+                                    )
+                                    {
+                                        over "ee_tip" (
+                                            prepend apiSchemas = ["IsaacLinkAPI"]
+                                        )
+                                        {
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    over "Physics"
+    {
+        over "root_joint" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "shoulder_joint" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "link_1_joint" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "link1_link2" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "a4_rotation" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "a5_rotation" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "a6_rotation" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "ee_presser_mount" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+
+        over "ee_tip_joint" (
+            prepend apiSchemas = ["IsaacJointAPI"]
+        )
+        {
+        }
+    }
+}
+

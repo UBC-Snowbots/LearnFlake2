@@ -1,0 +1,257 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.3"
+    }
+    defaultPrim = "tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE"
+    doc = """Generated from Composed Stage of root layer /tmp/tmpabjkcw_r/MAIN Arm Assembly RevB 2025-2026 V6.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_rover2026_ee_locp1c9i/usdex_rover2026_ee/MAIN Arm Assembly RevB 2025-2026 V6.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_rover2026_ee_locp1c9i/temp_rover2026_ee/rover2026_ee.usd
+
+
+Generated from Composed Stage of root layer /home/pranav/rover2026_import/ee_usd/rover2026_ee/payloads/base.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    subLayers = [
+        @./physics.usda@
+    ]
+    upAxis = "Z"
+)
+
+over "tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE"
+{
+    over "Physics"
+    {
+        def MjcActuator "shoulder_joint_actuator"
+        {
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            custom rel mjc:target
+            prepend rel mjc:target = </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/shoulder_joint>
+        }
+
+        def MjcActuator "link_1_joint_actuator"
+        {
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            custom rel mjc:target
+            prepend rel mjc:target = </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/link_1_joint>
+        }
+
+        def MjcActuator "link1_link2_actuator"
+        {
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            custom rel mjc:target
+            prepend rel mjc:target = </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/link1_link2>
+        }
+
+        def MjcActuator "a4_rotation_actuator"
+        {
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            custom rel mjc:target
+            prepend rel mjc:target = </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/a4_rotation>
+        }
+
+        def MjcActuator "a5_rotation_actuator"
+        {
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            custom rel mjc:target
+            prepend rel mjc:target = </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/a5_rotation>
+        }
+
+        def MjcActuator "a6_rotation_actuator"
+        {
+            uniform double mjc:forceRange:max = 10
+            uniform double mjc:forceRange:min = -10
+            custom rel mjc:target
+            prepend rel mjc:target = </tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE/Physics/a6_rotation>
+        }
+
+        over "root_joint"
+        {
+        }
+
+        over "shoulder_joint" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "link_1_joint" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "link1_link2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "a4_rotation" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "a5_rotation" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "a6_rotation" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "ee_presser_mount"
+        {
+        }
+
+        over "ee_tip_joint"
+        {
+        }
+    }
+
+    over "Geometry"
+    {
+        over "base_link"
+        {
+            over "a1_shoulder_base"
+            {
+                over "a2_link_1"
+                {
+                    over "a3_axis4_housing"
+                    {
+                        over "a4_link2"
+                        {
+                            over "a5_internal_upright"
+                            {
+                                over "a6_EE_holder"
+                                {
+                                    over "ee_presser"
+                                    {
+                                        over "ee_tip"
+                                        {
+                                        }
+
+                                        over "cylinder"
+                                        {
+                                        }
+
+                                        over "cylinder_1"
+                                        {
+                                        }
+
+                                        over "sphere"
+                                        {
+                                        }
+
+                                        over "cylinder_2"
+                                        {
+                                        }
+
+                                        over "cylinder_3"
+                                        {
+                                        }
+
+                                        over "sphere_1"
+                                        {
+                                        }
+                                    }
+
+                                    over "a6_EE_holder"
+                                    {
+                                    }
+
+                                    over "a6_EE_holder_1"
+                                    {
+                                    }
+                                }
+
+                                over "a5_internal_upright"
+                                {
+                                }
+
+                                over "a5_internal_upright_1"
+                                {
+                                }
+                            }
+
+                            over "a4_link2"
+                            {
+                            }
+
+                            over "a4_link2_1"
+                            {
+                            }
+                        }
+
+                        over "a3_axis4_housing"
+                        {
+                        }
+
+                        over "a3_axis4_housing_1"
+                        {
+                        }
+                    }
+
+                    over "a2_link_1"
+                    {
+                    }
+
+                    over "a2_link_1_1"
+                    {
+                    }
+                }
+
+                over "a1_shoulder_base"
+                {
+                }
+
+                over "a1_shoulder_base_1"
+                {
+                }
+            }
+
+            over "base_link"
+            {
+            }
+
+            over "base_link_1"
+            {
+            }
+        }
+    }
+
+    over "Materials"
+    {
+        over "tn__mat_cylinder_020_020_022_1_ld0JO"
+        {
+        }
+
+        over "tn__mat_cylinder_085_085_088_1_ld0JO"
+        {
+        }
+
+        over "tn__mat_sphere_005_005_005_1_ka0HM"
+        {
+        }
+    }
+
+    over "VisualMaterials"
+    {
+    }
+}
+

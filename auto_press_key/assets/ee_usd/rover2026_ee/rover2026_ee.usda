@@ -1,0 +1,52 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.3"
+    }
+    defaultPrim = "tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE"
+    doc = """Generated from Composed Stage of root layer /tmp/tmpabjkcw_r/MAIN Arm Assembly RevB 2025-2026 V6.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_rover2026_ee_locp1c9i/usdex_rover2026_ee/MAIN Arm Assembly RevB 2025-2026 V6.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_rover2026_ee_locp1c9i/temp_rover2026_ee/rover2026_ee.usd
+
+
+Generated from Composed Stage of root layer /home/pranav/rover2026_import/ee_usd/rover2026_ee/payloads/base.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "tn__MAINArmAssemblyRevB20252026V6_YU8HMV0mE" (
+    prepend references = @./payloads/base.usda@
+    variants = {
+        string Physics = "physx"
+    }
+    append variantSets = "Physics"
+)
+{
+    variantSet "Physics" = {
+        "mujoco" (
+            prepend payload = @./payloads/Physics/mujoco.usda@
+        ) {
+
+        }
+        "none" {
+
+        }
+        "physics" (
+            prepend payload = @./payloads/Physics/physics.usda@
+        ) {
+
+        }
+        "physx" (
+            prepend payload = @./payloads/Physics/physx.usda@
+        ) {
+
+        }
+    }
+}
+

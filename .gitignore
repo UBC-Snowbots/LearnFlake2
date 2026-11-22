@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# run logs and recordings stay out of git
+auto_press_key/logs/
+auto_press_key/outputs/
+*.mp4
+*.tar.gz
+
+# checkpoints stay out of git, except the single shipped model
+*.pt
+*.pth
+*.ckpt
+*.onnx
+!auto_press_key/models/model_2499.pt
