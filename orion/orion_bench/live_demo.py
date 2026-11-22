@@ -1,6 +1,6 @@
 """Headless offline pose and temporal-classifier demonstration.
 
-Inputs are local TorchScript artifacts, a camera index or a local video file.
+Inputs are local TorchScript artifacts, a camera index, a ROS 2 image topic or a local video file.
 The output is diagnostic, not a validated gesture detector.
 """
 import argparse
@@ -9,12 +9,15 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import signal
 import sys
 import time
 
 import cv2
 import numpy as np
 import torch
+
+from . import ros_source
 
 
 POSE_CONFIDENCE = 0.25
@@ -28,8 +31,14 @@ COCO_EDGES = ((5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (5, 11), (6, 12), (11, 12
 
 
 def live_source(source):
-    """Camera index, /dev/video* path, stream URL or GStreamer pipeline (ends in appsink): timestamped by capture clock."""
-    return source.isdecimal() or source.startswith("/dev/video") or "://" in source or "appsink" in source
+    """Camera index, /dev/video* path, stream URL, GStreamer pipeline (ends in appsink) or ros2[:<topic>]: live, not a file."""
+    return (source.isdecimal() or source.startswith("/dev/video") or "://" in source or "appsink" in source
+            or ros_source.is_ros_source(source))
+
+
+def raise_interrupt(signum, frame):
+    """SIGTERM handler for ros2: sources so the node shuts down through the same path as Ctrl-C."""
+    raise KeyboardInterrupt
 
 
 def artifact(path, filename):
@@ -171,6 +180,9 @@ def run(args):
         raise ValueError("CUDA was requested but is not available")
     if args.max_frames is not None and args.max_frames <= 0:
         raise ValueError("--max-frames must be positive")
+    ros_topic = ros_source.topic_from_source(args.source)
+    if ros_topic and not 0 < args.ros_warn_after < args.ros_timeout:
+        raise ValueError("--ros-warn-after must be positive and below --ros-timeout")
     camera = live_source(args.source)
     source = int(args.source) if args.source.isdecimal() else args.source
     if not camera and not Path(source).is_file():
@@ -185,25 +197,37 @@ def run(args):
                "frames": 0, "processed_fps": None, "triggers": [],
                "note": "Diagnostic only; not validated for rover control."}
     capture = writer = preview = None
+    previous_sigterm = signal.signal(signal.SIGTERM, raise_interrupt) if ros_topic else None
     start = time.perf_counter()
     try:
         pose = torch.jit.load(str(pose_path), map_location=args.device).eval()
         classifier = torch.jit.load(str(classifier_path), map_location=args.device).eval()
-        capture = cv2.VideoCapture(source, cv2.CAP_GSTREAMER) if "appsink" in args.source else cv2.VideoCapture(source)
-        if not capture.isOpened():
-            raise RuntimeError(f"Cannot open source: {args.source}")
-        source_fps = float(capture.get(cv2.CAP_PROP_FPS))
+        if ros_topic:
+            capture = ros_source.RosImageSource(ros_topic, reliable=args.ros_reliable, warn_after=args.ros_warn_after, timeout=args.ros_timeout)
+            source_fps = math.nan
+        else:
+            capture = cv2.VideoCapture(source, cv2.CAP_GSTREAMER) if "appsink" in args.source else cv2.VideoCapture(source)
+            if not capture.isOpened():
+                raise RuntimeError(f"Cannot open source: {args.source}")
+            source_fps = float(capture.get(cv2.CAP_PROP_FPS))
         if not camera and (not math.isfinite(source_fps) or source_fps <= 0):
             raise RuntimeError("Video has no usable FPS metadata for timestamps")
         output_fps = source_fps if not camera else (source_fps if math.isfinite(source_fps) and 1 <= source_fps <= 120 else TARGET_FPS)
         summary.update(source_fps=source_fps if math.isfinite(source_fps) else None, overlay_fps=output_fps,
-                       timestamp_basis="monotonic capture time" if camera else "frame index / source FPS")
+                       timestamp_basis="ros_header_stamp" if ros_topic else "monotonic capture time" if camera else "frame index / source FPS")
+        if ros_topic:
+            summary.update(ros_topic=ros_topic, ros_qos="reliable" if args.ros_reliable else "best_effort")
         tracks, next_id = {}, 1
+        stamp_origin = last_stamp = None
         elapsed_pose = elapsed_classifier = 0.0
         with (output / "frames.jsonl").open("w") as records, torch.inference_mode():
             while args.max_frames is None or summary["frames"] < args.max_frames:
                 frame_start = time.perf_counter()
-                ok, frame = capture.read()
+                if ros_topic:
+                    frame, stamp = capture.read()
+                    ok = True
+                else:
+                    ok, frame = capture.read()
                 captured = time.perf_counter()
                 if not ok or frame is None:
                     if camera:
@@ -211,7 +235,18 @@ def run(args):
                     if summary["frames"] == 0:
                         raise RuntimeError("Video contains no readable frames")
                     break
-                timestamp = captured - start if camera else summary["frames"] / source_fps
+                if ros_topic:
+                    if stamp <= 0:
+                        raise RuntimeError(f"Image on {ros_topic} has a zero header stamp; the publisher must stamp its frames")
+                    if stamp_origin is None:
+                        stamp_origin = stamp
+                        summary.update(ros_stamp_origin_seconds=stamp, ros_image_encoding=capture.encoding)
+                    elif stamp < last_stamp:
+                        raise RuntimeError(f"Header stamps on {ros_topic} went backwards ({stamp:.6f} after {last_stamp:.6f})")
+                    last_stamp = stamp
+                    timestamp = stamp - stamp_origin
+                else:
+                    timestamp = captured - start if camera else summary["frames"] / source_fps
                 height, width = frame.shape[:2]
                 if writer is None:
                     writer = cv2.VideoWriter(str(output / "overlay.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), output_fps, (width, height))
@@ -278,6 +313,8 @@ def run(args):
                 record = {"frame": summary["frames"], "timestamp_seconds": timestamp, "people": people,
                           "latency_ms": {"capture": (captured - frame_start) * 1000, "pose": pose_ms,
                                          "classification_and_overlay": classifier_ms, "total": total_ms}}
+                if ros_topic:
+                    record["ros_stamp_seconds"] = stamp
                 records.write(json.dumps(record, allow_nan=False) + "\n")
                 records.flush()
                 summary["frames"] += 1
@@ -301,6 +338,8 @@ def run(args):
         summary["elapsed_seconds"] = elapsed
         summary["processed_fps"] = summary["frames"] / elapsed if elapsed > 0 else None
         (output / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
     print(f"{summary['status']}: {summary['frames']} frames, {summary['processed_fps']:.2f} processed FPS; diagnostic output in {output}")
 
 
@@ -310,13 +349,18 @@ def main():
     parser.add_argument("--classifier", required=True, help="Local classifier TorchScript file or artifact directory")
     parser.add_argument("--classifier-manifest", help="Optional classifier manifest (default: adjacent model_manifest.json)")
     parser.add_argument("--source", required=True,
-                        help="Camera index, /dev/video* path, stream URL, GStreamer pipeline ending in appsink, or local video path")
+                        help="Camera index, /dev/video* path, stream URL, GStreamer pipeline ending in appsink, ros2 (the default ROS 2 camera, "
+                             "/realsense435i/image_raw_decoded), ros2:<Image topic>, or local video path")
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-frames", type=int)
     parser.add_argument("--preview", help="GStreamer pipeline starting with appsrc that also receives each overlay frame, for a live view")
     parser.add_argument("--trigger-k", type=int, default=6, help="frames above threshold needed to trigger")
     parser.add_argument("--trigger-m", type=int, default=8, help="recent scored frames considered")
+    parser.add_argument("--ros-reliable", action="store_true",
+                        help="ros2: sources only. Subscribe with reliable QoS (default best effort, which also receives from reliable publishers)")
+    parser.add_argument("--ros-warn-after", type=float, default=2.0, help="ros2: sources only. Warn after this many seconds without a new frame")
+    parser.add_argument("--ros-timeout", type=float, default=10.0, help="ros2: sources only. Fail after this many seconds without a new frame")
     args = parser.parse_args()
     try:
         run(args)

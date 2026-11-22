@@ -19,3 +19,7 @@ train = ["torch", "numpy"]
 
 [tool.setuptools.packages.find]
 include = ["orion_bench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
