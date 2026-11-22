@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Strips "Co-authored-by:" and "Generated with" lines from the commit message.
+# Enable with: git config core.hooksPath scripts/hooks
+set -euo pipefail
+
+msg="$1"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+grep -v -i -E '^[[:space:]]*(co-authored-by:|.*generated with)' "$msg" > "$tmp" || true
+# drop trailing blank lines left behind
+sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp" > "$msg"

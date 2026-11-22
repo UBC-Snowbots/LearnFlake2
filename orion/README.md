@@ -2,7 +2,7 @@
 
 Vision work for the **UBC Rover** URC 2027 Autonomy mission: recognise the astronaut's **Follow!** gesture from a camera, on an NVIDIA Jetson Orin NX, using a pose model plus a temporal skeleton classifier. Orion also contains the benchmark harness used to measure those models.
 
-Private repo: [Luxaris/Orion](https://github.com/Luxaris/Orion). Owner: Pranav. Local checkout: `~/projects/ubc-rover/Orion` (beside `RoverFlake2` and `LearnFlake`; `~/projects/ubc-rover-arm` is a compatibility symlink to the parent).
+Lives in `orion/` of [UBC-Snowbots/LearnFlake2](https://github.com/UBC-Snowbots/LearnFlake2), imported with its history from the private repo [Luxaris/Orion](https://github.com/Luxaris/Orion). That repo still holds the v0.3.0 release assets used in "Release procedure" below. Owner: Pranav. Run the commands below from this `orion/` directory.
 
 > **Read this file first, then the doc for the task you are doing.** Keep it current: when you change behaviour, artifacts, results or next steps, update the matching section here in the same change.
 
